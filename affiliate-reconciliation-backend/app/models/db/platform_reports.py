@@ -20,7 +20,7 @@ class PlatformReport(Base):
     views: Mapped[int] = mapped_column(Integer, default=0)
     clicks: Mapped[int] = mapped_column(Integer, default=0)
     conversions: Mapped[int] = mapped_column(Integer, default=0)
-    spend: Mapped[float] = mapped_column(Numeric(10, 2), default=0.00)
+    #spend: Mapped[float] = mapped_column(Numeric(10, 2), default=0.00)
 
     raw_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     fetched_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
