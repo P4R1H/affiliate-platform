@@ -36,30 +36,3 @@ __all__ = [
     # Platform
     "PlatformAPIResponse"
 ]
-
-# ====================
-# app/models/schemas/base.py
-# ====================
-# ====================
-# app/models/schemas/affiliates.py
-# ====================
-
-# ====================
-# app/models/schemas/campaigns.py
-# ====================
-# ====================
-# app/models/schemas/posts.py
-# ====================
-# ====================
-# app/models/schemas/reconciliation.py
-# ====================
-
-# ====================
-# app/models/schemas/dashboard.py
-# ====================
-# ====================
-# app/models/schemas/alerts.py
-# ====================
-# ====================
-# app/models/schemas/platform.py
-# ====================
