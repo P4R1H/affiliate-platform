@@ -14,14 +14,6 @@ campaign_platform_association = Table(
     Column('platform_id', Integer, ForeignKey('platforms.id'), primary_key=True)
 )
 
-# Association Table for Many-to-Many: Affiliates <-> Platforms
-affiliate_platform_association = Table(
-    'affiliate_platform_association', 
-    Base.metadata,
-    Column('affiliate_id', Integer, ForeignKey('affiliates.id'), primary_key=True),
-    Column('platform_id', Integer, ForeignKey('platforms.id'), primary_key=True)
-)
-
 class Platform(Base):
     __tablename__ = "platforms"
 
@@ -38,11 +30,6 @@ class Platform(Base):
         secondary=campaign_platform_association,
         back_populates="platforms"
     )
-    affiliates = relationship(
-        "Affiliate", 
-        secondary=affiliate_platform_association,
-        back_populates="platforms"
-    )
+    posts = relationship("Post", back_populates="platform")
     platform_reports = relationship("PlatformReport", back_populates="platform")
-    affiliate_reports = relationship("AffiliateReport", back_populates="platform")
 

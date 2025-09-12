@@ -26,5 +26,5 @@ class Campaign(Base):
         secondary=campaign_platform_association,
         back_populates="campaigns"
     )
-    affiliate_reports = relationship("AffiliateReport", back_populates="campaign")
-    platform_reports = relationship("PlatformReport", back_populates="campaign")
+    posts = relationship("Post", back_populates="campaign")
+

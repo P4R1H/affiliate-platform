@@ -1,6 +1,6 @@
 """
 SQLAlchemy model for the logs generated during the reconciliation process.
-This table stores the comparison results between affiliate claims and platform data.
+Now operates per-post instead of aggregate reconciliation runs.
 """
 import enum
 from sqlalchemy import Column, Integer, Text, DateTime, ForeignKey, Enum, Numeric
@@ -17,30 +17,30 @@ class ReconciliationStatus(str, enum.Enum):
     MATCHED = "MATCHED"
     DISCREPANCY = "DISCREPANCY" 
     MISSING_PLATFORM_DATA = "MISSING_PLATFORM_DATA"
-    MISSING_AFFILIATE_DATA = "MISSING_AFFILIATE_DATA"
+    AFFILIATE_OVERCLAIMED = "AFFILIATE_OVERCLAIMED"  # A >> B case
 
 class ReconciliationLog(Base):
     __tablename__ = "reconciliation_logs"
 
     id = Column(Integer, primary_key=True, index=True)
     
-    # What we're comparing
-    affiliate_report_id = Column(Integer, ForeignKey("affiliate_reports.id"), nullable=False)
-    platform_report_id = Column(Integer, ForeignKey("platform_reports.id"), nullable=True)  # NULL if missing
+    # What we're comparing - specific affiliate report vs platform report
+    affiliate_report_id = Column(Integer, ForeignKey("affiliate_reports.id"), nullable=False, unique=True)
+    platform_report_id = Column(Integer, ForeignKey("platform_reports.id"), nullable=True)  # NULL if missing platform data
     
     # Results
     status = Column(Enum(ReconciliationStatus), nullable=False, index=True)
     discrepancy_level = Column(Enum(DiscrepancyLevel), nullable=True, index=True)
     
     # Absolute differences (negative = affiliate claimed less than platform reported)
-    click_discrepancy = Column(Integer, default=0)
-    view_discrepancy = Column(Integer, default=0) 
-    conversion_discrepancy = Column(Integer, default=0)
+    views_discrepancy = Column(Integer, default=0)
+    clicks_discrepancy = Column(Integer, default=0) 
+    conversions_discrepancy = Column(Integer, default=0)
     
     # Percentage differences for easy thresholding
-    click_diff_pct = Column(Numeric(5, 2), nullable=True)  # e.g., 15.25 for 15.25%
-    view_diff_pct = Column(Numeric(5, 2), nullable=True)
-    conversion_diff_pct = Column(Numeric(5, 2), nullable=True)
+    views_diff_pct = Column(Numeric(5, 2), nullable=True)  # e.g., 15.25 for 15.25%
+    clicks_diff_pct = Column(Numeric(5, 2), nullable=True)
+    conversions_diff_pct = Column(Numeric(5, 2), nullable=True)
     
     notes = Column(Text, nullable=True)
     processed_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -49,3 +49,4 @@ class ReconciliationLog(Base):
     affiliate_report = relationship("AffiliateReport", back_populates="reconciliation_log")
     platform_report = relationship("PlatformReport", back_populates="reconciliation_logs")
     alert = relationship("Alert", back_populates="reconciliation_log", uselist=False)
+
