@@ -33,4 +33,5 @@ class Alert(Base):
     resolved_at: Mapped[DateTime | None] = mapped_column(DateTime, nullable=True)
     resolution_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    
     reconciliation_log: Mapped["ReconciliationLog"] = relationship("ReconciliationLog", back_populates="alert")
