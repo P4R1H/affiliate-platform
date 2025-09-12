@@ -2,7 +2,7 @@
 SQLAlchemy model for individual posts submitted by affiliates.
 Each post represents a single piece of content (link) posted by an affiliate for a campaign.
 """
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Boolean
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Boolean, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -35,4 +35,10 @@ class Post(Base):
     # One post can have multiple reports (snapshots over time)
     affiliate_reports = relationship("AffiliateReport", back_populates="post")
     platform_reports = relationship("PlatformReport", back_populates="post")
+
+    # Constraints - Prevent duplicate posts from same affiliate
+    __table_args__ = (
+        UniqueConstraint('campaign_id', 'platform_id', 'url', 'affiliate_id', 
+                        name='unique_affiliate_post_per_campaign'),
+    )
 
