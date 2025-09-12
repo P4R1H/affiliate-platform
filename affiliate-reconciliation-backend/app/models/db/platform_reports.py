@@ -27,5 +27,5 @@ class PlatformReport(Base):
 
     post: Mapped["Post"] = relationship("Post", back_populates="platform_reports")
     platform: Mapped["Platform"] = relationship("Platform", back_populates="platform_reports")
-    reconciliation_logs: Mapped[list["ReconciliationLog"]] = relationship("ReconciliationLog", back_populates="platform_report")
+    reconciliation_log: Mapped["ReconciliationLog"] = relationship("ReconciliationLog", back_populates="platform_report", uselist=False)
 
