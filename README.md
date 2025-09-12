@@ -398,6 +398,23 @@ INSTAGRAM_ACCESS_TOKEN=your-instagram-token
 META_ACCESS_TOKEN=your-meta-token
 ```
 
+## Typing & ORM Conventions
+
+The codebase uses SQLAlchemy 2.0 style typed ORM and Pydantic v2:
+
+* `Mapped[...]` + `mapped_column()` for all model columns.
+* `from __future__ import annotations` in each model to defer evaluation of forward references.
+* Forward references imported only under `if TYPE_CHECKING:` to satisfy static analysis without runtime circular imports.
+* Enum columns compared by coercing to string: `current = getattr(model.status, "value", model.status)`.
+* API responses leverage `ResponseBase` which now allows an optional `data: Dict[str, Any]` payload.
+
+When adding models:
+1. Use precise Python types (e.g. `int`, `float`, `dict | None`).
+2. Prefer explicit `list[Related]` over `Sequence` for relationship collections.
+3. Keep business logic out of models—place it in service layers.
+4. Update Pydantic schemas with `from_attributes = True` for ORM serialization.
+
+
 ### Sample Data Setup
 ```bash
 # Create sample campaigns, platforms, and affiliates

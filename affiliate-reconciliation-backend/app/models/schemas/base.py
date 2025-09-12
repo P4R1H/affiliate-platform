@@ -2,7 +2,7 @@
 Base schemas used across the application.
 """
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Any, Dict
 from pydantic import BaseModel, Field
 
 class UnifiedMetrics(BaseModel):
@@ -20,10 +20,16 @@ class UnifiedMetrics(BaseModel):
     source: str = Field(description="Source of data: 'affiliate_claim' or 'platform_api'")
 
 class ResponseBase(BaseModel):
-    """
-    Base response format for API endpoints.
+    """Base response format for API endpoints with an optional arbitrary data payload.
+
+    Adding a flexible ``data`` field resolves previous type errors where endpoints
+    attempted to pass a ``data={...}`` argument that wasn't declared.
     """
     success: bool = True
     message: Optional[str] = None
     timestamp: datetime = Field(default_factory=datetime.utcnow)
+    data: Optional[Dict[str, Any]] = None
+
+    class Config:
+        arbitrary_types_allowed = True
 

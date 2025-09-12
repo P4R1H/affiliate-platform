@@ -1,10 +1,14 @@
-"""
-SQLAlchemy model for the logs generated during the reconciliation process.
-Now operates per-post instead of aggregate reconciliation runs.
-"""
+from __future__ import annotations
+"""SQLAlchemy model for reconciliation logs."""
 import enum
-from sqlalchemy import Column, Integer, Text, DateTime, ForeignKey, Enum, Numeric
-from sqlalchemy.orm import relationship
+from typing import TYPE_CHECKING
+from sqlalchemy import Integer, Text, DateTime, ForeignKey, Enum, Numeric
+from sqlalchemy.orm import relationship, Mapped, mapped_column
+
+if TYPE_CHECKING:  # pragma: no cover
+    from .affiliate_reports import AffiliateReport
+    from .platform_reports import PlatformReport
+    from .alerts import Alert
 from sqlalchemy.sql import func
 from app.database import Base
 
@@ -21,32 +25,25 @@ class ReconciliationStatus(str, enum.Enum):
 
 class ReconciliationLog(Base):
     __tablename__ = "reconciliation_logs"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    affiliate_report_id: Mapped[int] = mapped_column(Integer, ForeignKey("affiliate_reports.id"), nullable=False, unique=True)
+    platform_report_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("platform_reports.id"), nullable=True)
 
-    id = Column(Integer, primary_key=True, index=True)
-    
-    # What we're comparing - specific affiliate report vs platform report
-    affiliate_report_id = Column(Integer, ForeignKey("affiliate_reports.id"), nullable=False, unique=True)
-    platform_report_id = Column(Integer, ForeignKey("platform_reports.id"), nullable=True)  # NULL if missing platform data
-    
-    # Results
-    status = Column(Enum(ReconciliationStatus), nullable=False, index=True)
-    discrepancy_level = Column(Enum(DiscrepancyLevel), nullable=True, index=True)
-    
-    # Absolute differences (negative = affiliate claimed less than platform reported)
-    views_discrepancy = Column(Integer, default=0)
-    clicks_discrepancy = Column(Integer, default=0) 
-    conversions_discrepancy = Column(Integer, default=0)
-    
-    # Percentage differences for easy thresholding
-    views_diff_pct = Column(Numeric(5, 2), nullable=True)  # e.g., 15.25 for 15.25%
-    clicks_diff_pct = Column(Numeric(5, 2), nullable=True)
-    conversions_diff_pct = Column(Numeric(5, 2), nullable=True)
-    
-    notes = Column(Text, nullable=True)
-    processed_at = Column(DateTime(timezone=True), server_default=func.now())
+    status: Mapped[ReconciliationStatus] = mapped_column(Enum(ReconciliationStatus), nullable=False, index=True)
+    discrepancy_level: Mapped[DiscrepancyLevel | None] = mapped_column(Enum(DiscrepancyLevel), nullable=True, index=True)
 
-    # Relationships
-    affiliate_report = relationship("AffiliateReport", back_populates="reconciliation_log")
-    platform_report = relationship("PlatformReport", back_populates="reconciliation_logs")
-    alert = relationship("Alert", back_populates="reconciliation_log", uselist=False)
+    views_discrepancy: Mapped[int] = mapped_column(Integer, default=0)
+    clicks_discrepancy: Mapped[int] = mapped_column(Integer, default=0)
+    conversions_discrepancy: Mapped[int] = mapped_column(Integer, default=0)
+
+    views_diff_pct: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+    clicks_diff_pct: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+    conversions_diff_pct: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    processed_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    affiliate_report: Mapped["AffiliateReport"] = relationship("AffiliateReport", back_populates="reconciliation_log")
+    platform_report: Mapped[PlatformReport | None] = relationship("PlatformReport", back_populates="reconciliation_logs")
+    alert: Mapped[Alert | None] = relationship("Alert", back_populates="reconciliation_log", uselist=False)
 
