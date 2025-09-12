@@ -15,7 +15,7 @@ class Affiliate(Base):
     name: Mapped[str] = mapped_column(String, unique=True, index=True)
     email: Mapped[str] = mapped_column(String, unique=True, index=True)
     discord_user_id: Mapped[str | None] = mapped_column(String, unique=True, nullable=True)
-#   api_key: Mapped[str | None] = mapped_column(String, unique=True, nullable=True) 
+    api_key: Mapped[str | None] = mapped_column(String, unique=True, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     trust_score: Mapped[float] = mapped_column(Numeric(3, 2), default=1.00)

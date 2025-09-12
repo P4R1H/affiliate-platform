@@ -4,10 +4,8 @@ API v1 router initialization and setup.
 from fastapi import APIRouter
 from .endpoints import campaigns, affiliates, submissions, reconciliation, alerts, platforms
 
-# Create the main API router for version 1
 api_router = APIRouter()
 
-# Include all endpoint routers with proper prefixes and tags
 api_router.include_router(
     campaigns.router, 
     prefix="/campaigns", 
