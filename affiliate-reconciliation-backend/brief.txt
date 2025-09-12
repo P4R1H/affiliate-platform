@@ -1,0 +1,38 @@
+Please build a working project (language/framework of your choice) that 
+demonstrates the following: 
+Functional Requirements 
+1.  Integrations:  
+○  Support integrations with multiple advertising platforms (e.g., Reddit, Instagram, 
+Meta).  
+○  You may mock these platform APIs if real ones are costly or unavailable.  
+2.  Affiliate Reporting Models:  
+○  Support two modes of affiliate data reporting:  a) Affiliates submitting data via Discord-like platforms (messages, screenshots, 
+links).  b) Affiliates pushing data directly via APIs into your system.  
+3.  Data Mapping & Verification:  
+○  At a configurable frequency, reconcile affiliate-reported data with advertising 
+platform data.  
+○  Verify affiliate claims (views, clicks, conversions, etc.).  
+4.  Data Quality & Inconsistencies:  
+○  Implement mechanisms to detect missing data, duplicates, or suspicious 
+discrepancies.  
+○  Show how you would flag inconsistencies for review.  
+5.  Unified Client View:  
+○  Model the final matched data in a uniform schema.  
+○  Present it as a consolidated view for advertisers across multiple affiliates and 
+platforms.  
+Non-Functional Expectations 
+●  Code should be modular and extensible (easy to add new platforms/affiliates).  
+●  Use best practices in API design and data modeling.  
+●  Demonstrate logging/observability for reconciliation runs.  
+●  Clearly document assumptions (mock APIs, data schemas, reconciliation rules).  
+Deliverables 
+●  Working solution (GitHub repo or hosted demo).  
+●  README with:  
+○  System architecture overview.  
+○  Example data flows (affiliate → system → advertiser view).  
+○  Instructions to run locally.  
+Stretch Goals (Optional) 
+●  Use a background job scheduler for reconciliation (e.g., cron, worker queues).  
+●  Implement a simple dashboard or API endpoint for advertiser view.  
+●  Add a basic alert mechanism when discrepancies cross a threshold.  
+ 
