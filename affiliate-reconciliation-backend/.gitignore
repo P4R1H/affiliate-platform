@@ -138,7 +138,7 @@ logs/
 # Secrets
 secrets.json
 
-# Node.js (if any)
+# Node.js 
 node_modules/
 npm-debug.log*
 yarn-debug.log*
