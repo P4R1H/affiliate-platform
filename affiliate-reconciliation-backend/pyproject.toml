@@ -6,9 +6,10 @@ authors = [
     {name = "P4R1H",email = "76397616+P4R1H@users.noreply.github.com"}
 ]
 license = {text = "MIT"}
-readme = "README.md"
-requires-python = ">=3.11,<3.13"
+readme = "../README.md"
+requires-python = ">=3.11, <3.13"
 dependencies = [
+    "sqlalchemy (>=2.0.43,<3.0.0)"
 ]
 
 
