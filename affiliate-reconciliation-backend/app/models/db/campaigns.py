@@ -1,30 +1,30 @@
-"""
-SQLAlchemy model for advertising campaigns.
-"""
-from sqlalchemy import Column, Integer, String, Date, DateTime, Numeric
-from sqlalchemy.orm import relationship
+from __future__ import annotations
+"""SQLAlchemy model for advertising campaigns."""
+from typing import TYPE_CHECKING
+from sqlalchemy import Integer, String, Date, DateTime, Numeric
+from sqlalchemy.orm import relationship, Mapped, mapped_column
+
+if TYPE_CHECKING:  # pragma: no cover
+    from .platforms import Platform
+    from .posts import Post
 from sqlalchemy.sql import func
 from app.database import Base
 from .platforms import campaign_platform_association
 
 class Campaign(Base):
     __tablename__ = "campaigns"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String, index=True)
+    advertiser_name: Mapped[str] = mapped_column(String)
+    start_date: Mapped[Date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[Date | None] = mapped_column(Date, nullable=True)
+    impression_cap: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cpm: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    status: Mapped[str] = mapped_column(String, default="active")
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, index=True, nullable=False)
-    advertiser_name = Column(String, nullable=False)
-    start_date = Column(Date, nullable=False)
-    end_date = Column(Date, nullable=True)
-    impression_cap = Column(Integer, nullable=True)
-    cpm = Column(Numeric(10, 2), nullable=True)
-    status = Column(String, default="active")  # active, paused, ended
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    # Relationships
-    platforms = relationship(
-        "Platform",
-        secondary=campaign_platform_association,
-        back_populates="campaigns"
+    platforms: Mapped[list["Platform"]] = relationship(
+        "Platform", secondary=campaign_platform_association, back_populates="campaigns"
     )
-    posts = relationship("Post", back_populates="campaign")
+    posts: Mapped[list["Post"]] = relationship("Post", back_populates="campaign")
 

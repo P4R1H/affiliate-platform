@@ -1,10 +1,13 @@
-"""
-SQLAlchemy model for reports submitted by affiliates (their claims).
-Now linked to individual posts - each report is a snapshot of metrics for a specific post.
-"""
+from __future__ import annotations
+"""SQLAlchemy model for reports submitted by affiliates (their claims)."""
 import enum
-from sqlalchemy import Column, Integer, String, Date, ForeignKey, DateTime, Enum, Numeric, JSON
-from sqlalchemy.orm import relationship
+from typing import TYPE_CHECKING
+from sqlalchemy import Integer, ForeignKey, DateTime, Enum, JSON
+from sqlalchemy.orm import relationship, Mapped, mapped_column
+
+if TYPE_CHECKING:  # pragma: no cover
+    from .posts import Post
+    from .reconciliation_logs import ReconciliationLog
 from sqlalchemy.sql import func
 from app.database import Base
 
@@ -19,24 +22,18 @@ class ReportStatus(str, enum.Enum):
 
 class AffiliateReport(Base):
     __tablename__ = "affiliate_reports"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    post_id: Mapped[int] = mapped_column(Integer, ForeignKey("posts.id"), nullable=False)
 
-    id = Column(Integer, primary_key=True, index=True)
-    
-    # Foreign Keys - now linked to specific post
-    post_id = Column(Integer, ForeignKey("posts.id"), nullable=False)
-    
-    # Claimed metrics at time of submission
-    claimed_views = Column(Integer, default=0)
-    claimed_clicks = Column(Integer, default=0)
-    claimed_conversions = Column(Integer, default=0)
+    claimed_views: Mapped[int] = mapped_column(Integer, default=0)
+    claimed_clicks: Mapped[int] = mapped_column(Integer, default=0)
+    claimed_conversions: Mapped[int] = mapped_column(Integer, default=0)
 
-    # Submission details
-    evidence_data = Column(JSON, nullable=True)  # Links, Discord messages, etc.
-    submission_method = Column(Enum(SubmissionMethod), nullable=False)
-    status = Column(Enum(ReportStatus), default=ReportStatus.PENDING, index=True)
-    
-    submitted_at = Column(DateTime(timezone=True), server_default=func.now())
+    evidence_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    submission_method: Mapped[SubmissionMethod] = mapped_column(Enum(SubmissionMethod), nullable=False)
+    status: Mapped[ReportStatus] = mapped_column(Enum(ReportStatus), default=ReportStatus.PENDING, index=True)
 
-    # Relationships
-    post = relationship("Post", back_populates="affiliate_reports")
-    reconciliation_log = relationship("ReconciliationLog", back_populates="affiliate_report", uselist=False)
+    submitted_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    post: Mapped["Post"] = relationship("Post", back_populates="affiliate_reports")
+    reconciliation_log: Mapped[ReconciliationLog | None] = relationship("ReconciliationLog", back_populates="affiliate_report", uselist=False)

@@ -1,8 +1,13 @@
-"""
-SQLAlchemy model for advertising platforms (e.g., Reddit, Meta, Instagram).
-"""
-from sqlalchemy import Column, Integer, String, DateTime, Table, ForeignKey, Boolean, JSON
-from sqlalchemy.orm import relationship
+from __future__ import annotations
+"""SQLAlchemy model for advertising platforms (e.g., Reddit, Meta, Instagram)."""
+from typing import TYPE_CHECKING
+from sqlalchemy import Integer, String, DateTime, Table, ForeignKey, Boolean, JSON, Column
+from sqlalchemy.orm import relationship, Mapped, mapped_column
+
+if TYPE_CHECKING:  # pragma: no cover
+    from .campaigns import Campaign
+    from .posts import Post
+    from .platform_reports import PlatformReport
 from sqlalchemy.sql import func
 from app.database import Base
 
@@ -16,20 +21,16 @@ campaign_platform_association = Table(
 
 class Platform(Base):
     __tablename__ = "platforms"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String, unique=True, index=True)
+    api_base_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    api_config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, index=True, nullable=False)
-    api_base_url = Column(String, nullable=True)
-    is_active = Column(Boolean, default=True)
-    api_config = Column(JSON, nullable=True)  # Store API keys, rate limits, etc.
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    # Relationships
-    campaigns = relationship(
-        "Campaign",
-        secondary=campaign_platform_association,
-        back_populates="platforms"
+    campaigns: Mapped[list["Campaign"]] = relationship(
+        "Campaign", secondary=campaign_platform_association, back_populates="platforms"
     )
-    posts = relationship("Post", back_populates="platform")
-    platform_reports = relationship("PlatformReport", back_populates="platform")
+    posts: Mapped[list["Post"]] = relationship("Post", back_populates="platform")
+    platform_reports: Mapped[list["PlatformReport"]] = relationship("PlatformReport", back_populates="platform")
 

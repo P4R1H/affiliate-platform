@@ -1,40 +1,38 @@
-"""
-SQLAlchemy model for individual posts submitted by affiliates.
-Each post represents a single piece of content (link) posted by an affiliate for a campaign.
-"""
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Boolean, UniqueConstraint
-from sqlalchemy.orm import relationship
+from __future__ import annotations
+"""SQLAlchemy model for individual posts submitted by affiliates."""
+from typing import TYPE_CHECKING
+from sqlalchemy import Integer, String, ForeignKey, DateTime, Boolean, UniqueConstraint, Column
+from sqlalchemy.orm import relationship, Mapped, mapped_column
+
+if TYPE_CHECKING:  # pragma: no cover
+    from .campaigns import Campaign
+    from .affiliates import Affiliate
+    from .platforms import Platform
+    from .affiliate_reports import AffiliateReport
+    from .platform_reports import PlatformReport
 from sqlalchemy.sql import func
 from app.database import Base
 
 class Post(Base):
     __tablename__ = "posts"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
 
-    id = Column(Integer, primary_key=True, index=True)
-    
-    # Foreign Keys
-    campaign_id = Column(Integer, ForeignKey("campaigns.id"), nullable=False)
-    affiliate_id = Column(Integer, ForeignKey("affiliates.id"), nullable=False)
-    platform_id = Column(Integer, ForeignKey("platforms.id"), nullable=False)
-    
-    # Post details
-    url = Column(String, nullable=False, index=True)  # The actual post URL
-    title = Column(String, nullable=True)  # Optional post title
-    description = Column(String, nullable=True)  # Optional post description
-    
-    # Status tracking
-    is_reconciled = Column(Boolean, default=False, index=True)
-    
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    campaign_id: Mapped[int] = mapped_column(Integer, ForeignKey("campaigns.id"), nullable=False)
+    affiliate_id: Mapped[int] = mapped_column(Integer, ForeignKey("affiliates.id"), nullable=False)
+    platform_id: Mapped[int] = mapped_column(Integer, ForeignKey("platforms.id"), nullable=False)
 
-    # Relationships
-    campaign = relationship("Campaign", back_populates="posts")
-    affiliate = relationship("Affiliate", back_populates="posts")
-    platform = relationship("Platform", back_populates="posts")
-    
-    # One post can have multiple reports (snapshots over time)
-    affiliate_reports = relationship("AffiliateReport", back_populates="post")
-    platform_reports = relationship("PlatformReport", back_populates="post")
+    url: Mapped[str] = mapped_column(String, index=True)
+    title: Mapped[str | None] = mapped_column(String, nullable=True)
+    description: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    is_reconciled: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    campaign: Mapped["Campaign"] = relationship("Campaign", back_populates="posts")
+    affiliate: Mapped["Affiliate"] = relationship("Affiliate", back_populates="posts")
+    platform: Mapped["Platform"] = relationship("Platform", back_populates="posts")
+    affiliate_reports: Mapped[list["AffiliateReport"]] = relationship("AffiliateReport", back_populates="post")
+    platform_reports: Mapped[list["PlatformReport"]] = relationship("PlatformReport", back_populates="post")
 
     # Constraints - Prevent duplicate posts from same affiliate
     __table_args__ = (
