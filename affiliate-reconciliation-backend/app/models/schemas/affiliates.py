@@ -4,7 +4,7 @@ Pydantic schemas for affiliate-related operations.
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field, EmailStr
-from .base import UnifiedMetrics
+from ..db.affiliate_reports import SubmissionMethod 
 
 class AffiliateCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
@@ -59,9 +59,9 @@ class AffiliatePostSubmission(BaseModel):
     claimed_clicks: int = Field(ge=0) 
     claimed_conversions: int = Field(ge=0)
     
-    # Evidence and submission method
+    # Evidence and submission method - FIXED: Now uses proper enum
     evidence_data: Optional[Dict[str, Any]] = Field(None, description="Screenshots, links, additional data")
-    submission_method: str = Field(description="API or DISCORD")
+    submission_method: SubmissionMethod = Field(description="API or DISCORD")
     
     class Config:
         schema_extra = {
