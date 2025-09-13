@@ -52,14 +52,17 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Application startup initiated")
     
+    global _queue, _worker
     try:
         # Create database tables
         logger.info("Creating database tables")
         Base.metadata.create_all(bind=engine)
         logger.info("Database tables created successfully")
+
         # Initialize in-memory queue + worker (MVP)
-        global _queue, _worker
         _queue = PriorityDelayQueue()
+        # expose queue in app state for endpoints to enqueue jobs without importing main (avoid circular)
+        app.state.reconciliation_queue = _queue  # type: ignore[attr-defined]
         _worker = ReconciliationWorker(_queue)
         _worker.start()
         logger.info("Reconciliation queue + worker started")
