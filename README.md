@@ -663,23 +663,23 @@ python scripts/run_reconciliation.py
 
 ## Documentation
 
-Complete documentation is available in the `docs/` folder:
+Complete documentation is available in the `affiliate-reconciliation-backend/docs/` folder:
 
 ### Core Documentation
-- [API Reference](docs/API_REFERENCE.md) - Complete REST API documentation
-- [Setup Guide](docs/SETUP_GUIDE.md) - Installation and deployment instructions
-- [Configuration](docs/CONFIGURATION.md) - Complete configuration reference
-- [Platform Integrations](docs/INTEGRATIONS.md) - Guide for implementing platform adapters
-- [Data Flow Examples](docs/DATA_FLOW_EXAMPLES.md) - Concrete examples of system operation
+- [API Reference](affiliate-reconciliation-backend/docs/API_REFERENCE.md) - Complete REST API documentation
+- [Setup Guide](affiliate-reconciliation-backend/docs/SETUP_GUIDE.md) - Installation and deployment instructions
+- [Configuration](affiliate-reconciliation-backend/docs/CONFIGURATION.md) - Complete configuration reference
+- [Platform Integrations](affiliate-reconciliation-backend/docs/INTEGRATIONS.md) - Guide for implementing platform adapters
+- [Data Flow Examples](affiliate-reconciliation-backend/docs/DATA_FLOW_EXAMPLES.md) - Concrete examples of system operation
 
 ### System Design
-- [Architecture Overview](docs/ARCHITECTURE_OVERVIEW.md) - System design and components
-- [Data Model](docs/DATA_MODEL.md) - Database schema and relationships
-- [Reconciliation Engine](docs/RECONCILIATION_ENGINE.md) - Core reconciliation logic
-- [Queue & Worker](docs/QUEUE_AND_WORKER.md) - Background job processing
-- [Alerting & Trust](docs/ALERTING_AND_TRUST.md) - Trust scoring and alert systems
+- [Architecture Overview](affiliate-reconciliation-backend/docs/ARCHITECTURE_OVERVIEW.md) - System design and components
+- [Data Model](affiliate-reconciliation-backend/docs/DATA_MODEL.md) - Database schema and relationships
+- [Reconciliation Engine](affiliate-reconciliation-backend/docs/RECONCILIATION_ENGINE.md) - Core reconciliation logic
+- [Queue & Worker](affiliate-reconciliation-backend/docs/QUEUE_AND_WORKER.md) - Background job processing
+- [Alerting & Trust](affiliate-reconciliation-backend/docs/ALERTING_AND_TRUST.md) - Trust scoring and alert systems
 
 ### Operations
-- [Testing Strategy](docs/TESTING_STRATEGY.md) - Test approach and coverage
-- [Operations & Observability](docs/OPERATIONS_AND_OBSERVABILITY.md) - Monitoring and troubleshooting
-- [Roadmap](docs/ROADMAP.md) - Future enhancements and priorities
+- [Testing Strategy](affiliate-reconciliation-backend/docs/TESTING_STRATEGY.md) - Test approach and coverage
+- [Operations & Observability](affiliate-reconciliation-backend/docs/OPERATIONS_AND_OBSERVABILITY.md) - Monitoring and troubleshooting
+- [Roadmap](affiliate-reconciliation-backend/docs/ROADMAP.md) - Future enhancements and priorities
