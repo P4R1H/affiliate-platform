@@ -1,14 +1,11 @@
-# Rough notes
-poetry over pip
+# Development Notes
 
-That makes sense, lets get rid of the image proof to save up on the bandwidth & storage while keeping view count as fallback
-The verification is enough of a deterrant to not fake views & someone who really wants to fake views would not have a tough time faking the screenshot as well
-
-affiliates can provide api key through which we can access information from their posts which we couldnt otherwise
-
-Moved to queue based reconcilation over cronjob based
-
-Stopped collecting proof images
+Key architectural decisions made during development:
+- **Poetry over pip**: Better dependency management and virtual environment handling
+- **Queue-based reconciliation**: Replaced cron-based batch processing with real-time job queue for faster feedback
+- **Removed image proofs**: Eliminated screenshot storage to reduce bandwidth/storage overhead and attack surface
+- **Mock-first integrations**: Prioritized core reconciliation logic over real API complexity
+- **Trust scoring**: Added affiliate reliability tracking for fraud detection
 
 ---
 
@@ -150,18 +147,46 @@ GET    /api/v1/alerts/                   # List alerts (none if no discrepancies
 ## Running Locally
 
 ### Prerequisites
-- Python 3.11+
-- (Optional) PostgreSQL / For tests we use in-memory SQLite
+- Python 3.11+ (3.12 recommended)
+- Poetry (for dependency management)
 
-### Install (Poetry)
-```
+### Quick Start
+```bash
+# Clone the repository
+git clone <repository-url>
+cd affiliate-reconciliation-backend
+
+# Install dependencies
 poetry install
+
+# Run tests to verify setup
 poetry run pytest -q
+
+# Start the development server
 poetry run uvicorn app.main:app --reload
 ```
 
-### Minimal Env
-Copy `.env.example` → `.env` and adjust if adding real DB / external APIs.
+**Access the API:**
+- API: http://localhost:8000
+- Documentation: http://localhost:8000/docs
+- Alternative docs: http://localhost:8000/redoc
+
+### Environment Configuration
+Create a `.env` file (optional - defaults work for development):
+```bash
+# Database (SQLite used by default)
+DATABASE_URL=sqlite:///./test.db
+
+# Logging
+LOG_LEVEL=INFO
+LOG_FILE=logs/app.log
+
+# Mock settings
+INTEGRATIONS_RANDOM_SEED=12345
+MOCK_FAILURE_RATE=0.05
+```
+
+For complete setup instructions including production deployment, see [Setup Guide](docs/SETUP_GUIDE.md).
 
 ## Extending the System
 Add a new platform:
@@ -186,6 +211,41 @@ Add richer reconciliation logic:
 - Idempotency keys (currently duplicate prevention handled by composite uniqueness + logic).
 - Bulk campaign/affiliate admin endpoints (guarded by roles).
 - Metrics API for aggregated dashboards (currently derivable through queries).
+
+## Current Limitations & Roadmap
+
+This implementation provides a solid foundation but has several planned improvements documented in `docs/ROADMAP.md`. Key P1 items:
+
+### Core Correctness & Resilience ✅ IMPLEMENTED
+- **Background job queue**: Priority-based delay queue with worker threads ✅
+- **Trust scoring system**: Comprehensive affiliate reliability tracking ✅
+- **Alert mechanisms**: Multi-tier alert system with escalation ✅
+- **Circuit breaker protection**: Platform outage protection ✅
+
+### Observability & Operations 🚧 IN PROGRESS
+- **Structured JSON logging**: Comprehensive logging with correlation IDs ✅
+- **Performance metrics**: Request timing and business event tracking ✅
+- **Health checks**: Basic health endpoints ✅
+- **Prometheus metrics**: SLO monitoring (planned)
+- **Slack/webhook alerts**: Real-time operational notifications (planned)
+
+### Scalability 📋 PLANNED
+- **External durable queue**: Redis/SQS for production deployment
+- **Horizontal worker scaling**: Multiple worker processes  
+- **PostgreSQL migration**: From SQLite for production concurrency
+
+See `docs/ROADMAP.md` for the complete prioritized backlog with implementation details and rationale.
+
+---
+- **Structured JSON logging**: Better log aggregation and correlation
+- **Slack/webhook alerts**: Real-time operational notifications
+
+### Scalability
+- **External durable queue**: Redis/SQS for production deployment
+- **Horizontal worker scaling**: Multiple worker processes
+- **PostgreSQL migration**: From SQLite for production concurrency
+
+See `docs/ROADMAP.md` for the complete prioritized backlog with implementation details and rationale.
 
 ---
 Historical design notes retained above the delimiter for context & decision traceability.
@@ -589,19 +649,37 @@ python scripts/create_test_submissions.py
 python scripts/run_reconciliation.py
 ```
 
-## Development Phases
+## Development Phases ✅ COMPLETED
 
-- [x] **Phase 1**: Database design and core models
-- [x] **Phase 2**: Pydantic schemas and validation
-- [x] **Phase 3**: API endpoints and routing
-- [x] **Phase 4**: Platform integration services
-- [ ] **Phase 5**: Reconciliation job queue
-- [ ] **Phase 6**: Dashboard and unified views
-- [ ] **Phase 7**: Alerting and monitoring
+- [x] **Phase 1**: Database design and core models ✅
+- [x] **Phase 2**: Pydantic schemas and validation ✅
+- [x] **Phase 3**: API endpoints and routing ✅
+- [x] **Phase 4**: Platform integration services ✅
+- [x] **Phase 5**: Reconciliation job queue ✅
+- [x] **Phase 6**: Trust scoring and alerting ✅
+- [x] **Phase 7**: Comprehensive logging and monitoring ✅
 
-## Next Steps
-1. Implement FastAPI endpoints using the defined schemas
-2. Create platform integration services with adapter pattern
-3. Set up job queue system for reconciliation processing
-4. Build dashboard views with aggregated metrics
-5. Add comprehensive logging and monitoring
+**All major features from the brief have been implemented and tested.**
+
+## Documentation
+
+Complete documentation is available in the `docs/` folder:
+
+### Core Documentation
+- [API Reference](docs/API_REFERENCE.md) - Complete REST API documentation
+- [Setup Guide](docs/SETUP_GUIDE.md) - Installation and deployment instructions
+- [Configuration](docs/CONFIGURATION.md) - Complete configuration reference
+- [Platform Integrations](docs/INTEGRATIONS.md) - Guide for implementing platform adapters
+- [Data Flow Examples](docs/DATA_FLOW_EXAMPLES.md) - Concrete examples of system operation
+
+### System Design
+- [Architecture Overview](docs/ARCHITECTURE_OVERVIEW.md) - System design and components
+- [Data Model](docs/DATA_MODEL.md) - Database schema and relationships
+- [Reconciliation Engine](docs/RECONCILIATION_ENGINE.md) - Core reconciliation logic
+- [Queue & Worker](docs/QUEUE_AND_WORKER.md) - Background job processing
+- [Alerting & Trust](docs/ALERTING_AND_TRUST.md) - Trust scoring and alert systems
+
+### Operations
+- [Testing Strategy](docs/TESTING_STRATEGY.md) - Test approach and coverage
+- [Operations & Observability](docs/OPERATIONS_AND_OBSERVABILITY.md) - Monitoring and troubleshooting
+- [Roadmap](docs/ROADMAP.md) - Future enhancements and priorities
