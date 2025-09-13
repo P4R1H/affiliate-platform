@@ -44,6 +44,6 @@ class ReconciliationLog(Base):
     processed_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     affiliate_report: Mapped["AffiliateReport"] = relationship("AffiliateReport", back_populates="reconciliation_log")
-    platform_report: Mapped[PlatformReport | None] = relationship("PlatformReport", back_populates="reconciliation_logs")
+    platform_report: Mapped[PlatformReport | None] = relationship("PlatformReport", back_populates="reconciliation_log")
     alert: Mapped[Alert | None] = relationship("Alert", back_populates="reconciliation_log", uselist=False)
 
