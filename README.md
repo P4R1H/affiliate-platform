@@ -10,29 +10,185 @@ Moved to queue based reconcilation over cronjob based
 
 Stopped collecting proof images
 
-# START
+---
+
 # Affiliate Reconciliation Platform
 
-A comprehensive system for reconciling affiliate-reported advertising metrics with platform-sourced data across multiple advertising channels.
+End-to-end system for receiving affiliate-reported performance metrics, normalizing and verifying them against platform-sourced data, and surfacing discrepancies & trust signals—optimized for extensibility and rapid iteration.
 
 ## Table of Contents
 - [System Overview](#system-overview)
+- [Why Mock Platforms](#why-mock-platforms)
+- [Why We Removed Image Proofs](#why-we-removed-image-proofs)
 - [Architecture](#architecture)
-- [Database Design](#database-design)
-- [Data Flow](#data-flow)
-- [Key Improvements Over Requirements](#key-improvements-over-requirements)
-- [Assumptions & Decisions](#assumptions--decisions)
-- [API Endpoints](#api-endpoints)
-- [Getting Started](#getting-started)
+- [Data Model & Integrity](#data-model--integrity)
+- [Reconciliation Lifecycle](#reconciliation-lifecycle)
+- [Enhancements vs Brief](#enhancements-vs-brief)
+- [Assumptions & Design Choices](#assumptions--design-choices)
+- [RBAC & Security](#rbac--security)
+- [API Surface (Implemented)](#api-surface-implemented)
+- [Running Locally](#running-locally)
+- [Extending the System](#extending-the-system)
+- [Future Opportunities](#future-opportunities)
 
 ## System Overview
 
-This platform addresses the challenge of verifying affiliate marketing claims by:
-- Accepting affiliate submissions via Discord and direct API
-- Fetching verification data from advertising platforms (Reddit, Instagram, Meta)
-- Reconciling discrepancies between claimed and actual metrics
-- Providing unified dashboards for advertisers
-- Maintaining audit trails and trust scoring for affiliates
+Core responsibilities:
+1. Accept affiliate submissions (API now; Discord-style ingestion planned but schema-ready).
+2. Normalize links & enrich platform context (e.g., Reddit permalink normalization).
+3. Generate or fetch platform truth metrics (mock adapters for now; real integration boundary preserved).
+4. Reconcile claims vs truth & log discrepancies for auditability.
+5. Maintain affiliate trust score as lightweight fraud/quality signal.
+6. Expose structured, typed API responses for downstream dashboards / analytics.
+
+Status: A lean but production-aligned core—no speculative abstractions, only primitives required by the brief + targeted integrity & governance improvements.
+
+## Why Mock Platforms
+The brief explicitly permits mocking platform APIs. We deliberately mock Reddit/Instagram/TikTok/YouTube/X for the following reasons:
+- Cost & Rate Limits: Real APIs often require credentials, rate negotiation, or long review cycles.
+- Deterministic Testing: Mocks let us exercise edge paths (timeouts, partial data, random latency) without flakiness.
+- Extensibility Contract: Each adapter already conforms to a unified `PlatformAPIResponse` → `UnifiedMetrics` conversion. Swapping in a real client is a drop-in replacement (just implement fetch + transform).
+- Risk Isolation: Avoids external dependency drift during reconciliation correctness evolution.
+
+We still perform a real-ish network normalization pass for Reddit URLs to prove boundary design (link canonicalization), while metrics remain simulated.
+
+## Why We Removed Image Proofs
+Originally submissions contemplated screenshot/image evidence. We eliminated image uploads because:
+- Reconciliation Supersedes Static Proofs: Platform-fetched metrics are authoritative; screenshots become redundant & manipulable.
+- Bandwidth & Storage Overhead: Eliminated binary storage, simplifying infra & security posture.
+- Attack Surface Reduction: Less surface for exfiltration / malware payloads via image metadata.
+- Developer Velocity: Faster iteration focusing on reconciliation core instead of object storage orchestration.
+
+Fallback Strategy: If a platform API later restricts a metric, we can re-introduce selective lightweight evidence fields (already supported via `evidence_data` JSON) without reworking persistence.
+
+## Architecture
+
+```
+Clients (Affiliates) ─┐
+              ▼
+          FastAPI HTTP Layer
+              ▼
+    ┌──────── Domain / Services ────────┐
+    │  Submissions  |  Integrations     │
+    │  Reconciliation (sync placeholder)│
+    └────────────────┬──────────────────┘
+             ▼
+         Persistence (SQLAlchemy)
+             ▼
+         Structured Logging Layer
+```
+
+Modular integration adapters expose consistent metric structures; reconciliation logic consumes affiliate + platform reports to produce logs & trust score updates.
+
+## Data Model & Integrity
+
+Highlights:
+- Post-centric granularity (one row per unique affiliate-platform-campaign URL) with uniqueness constraint.
+- Append-only affiliate report history; platform fetch snapshots stored separately.
+- Reconciliation logs capture comparison outcome (scaffold present; thresholds enforced in services layer).
+- Enforced uniqueness: affiliate email + name + per-post uniqueness composite constraint.
+- Enums introduced (`CampaignStatus`, `UserRole`) to remove fragile string literals.
+- Role column added to `Affiliate` enabling RBAC without introducing a parallel user table.
+
+## Reconciliation Lifecycle
+Current: Triggered on submission (synchronous placeholder) or via explicit endpoint.
+Roadmap (deferred): Offload to queue / worker for isolation & retry semantics.
+Stages:
+1. Affiliate submits claim.
+2. Link normalization + platform adapter call (mock returns metrics / or defers to upstream).
+3. Metrics persisted as affiliate report + (optional) platform report.
+4. Discrepancy computation logged (future: alert thresholds drive `Alert` creation).
+5. Trust score recalculated (simple accuracy ratio now; extensible for weighted rules).
+
+## Enhancements vs Brief
+| Brief Item | Delivered | Enhancement Notes |
+|------------|-----------|------------------|
+| Multi-platform integrations | Yes (mock adapters) | Uniform response contract; easy real API swap |
+| Two reporting modes | API implemented; Discord-ready schema | `submission_method` Enum persisted |
+| Reconciliation frequency | On-demand + per-submission model | Faster feedback vs batch cron |
+| Detect inconsistencies | Uniqueness + discrepancy scaffolding + alerts model | Threshold logic extendable |
+| Unified view | `UnifiedMetrics` + normalized platform schemas | Minimizes downstream branching |
+| Logging / observability | Structured logger + performance events | Business & timing metadata keyed by request |
+| Modularity/extensibility | Adapter isolation + enums + schemas | Low coupling between layers |
+| RBAC | Minimal role-based admin guard | Extensible dependency pattern |
+| Trust scoring | Implemented baseline | Supports future weighting |
+
+## Assumptions & Design Choices
+- **Mock-first** to accelerate iteration; external real clients mountable behind existing adapter signatures.
+- **Enum Hardening** reduced typo risk + simplified validation logic.
+- **No Image Storage** (see rationale above) to streamline MVP and reduce operational burden.
+- **Immediate Reconciliation** over scheduled batch for increased affiliate feedback precision.
+- **Localized Constants** for mock integrations to avoid premature global config bloat.
+- **Pydantic V2 Migration (Partial)** replaced deprecated `.dict()` / `.from_orm()` usage in core endpoints; remaining schemas can be migrated incrementally.
+
+## RBAC & Security
+- Authentication: Bearer API key issued at affiliate creation.
+- Role-based admin enforcement implemented for campaign creation (ADMIN only).
+- Future: granular scopes (platform management, reconciliation control) if needed.
+
+## API Surface (Implemented)
+Core (current working subset):
+```
+POST   /api/v1/affiliates/               # Create affiliate (returns api_key)
+GET    /api/v1/affiliates/me             # Authenticated affiliate profile
+PUT    /api/v1/affiliates/me             # Update own profile
+
+POST   /api/v1/campaigns/                # (ADMIN) Create campaign
+GET    /api/v1/campaigns/                # List campaigns (enum filter)
+
+POST   /api/v1/submissions/              # Submit post & claimed metrics
+PUT    /api/v1/submissions/{post_id}/metrics  # Update claimed metrics
+GET    /api/v1/submissions/history       # List own posts
+GET    /api/v1/submissions/{post_id}/metrics # Metrics evolution
+
+POST   /api/v1/reconciliation/run        # Trigger reconciliation (scaffold)
+GET    /api/v1/reconciliation/results    # List reconciliation logs
+
+GET    /api/v1/alerts/                   # List alerts (none if no discrepancies yet)
+```
+
+## Running Locally
+
+### Prerequisites
+- Python 3.11+
+- (Optional) PostgreSQL / For tests we use in-memory SQLite
+
+### Install (Poetry)
+```
+poetry install
+poetry run pytest -q
+poetry run uvicorn app.main:app --reload
+```
+
+### Minimal Env
+Copy `.env.example` → `.env` and adjust if adding real DB / external APIs.
+
+## Extending the System
+Add a new platform:
+1. Create `app/integrations/<platform>.py` implementing fetch + unify.
+2. Add platform row via seed or factory.
+3. Wire into submission normalization if URL patterns differ.
+
+Add real API integration:
+1. Replace mock metric generation with HTTP client logic.
+2. Return data mapped to `PlatformAPIResponse`.
+3. Preserve schema fields to avoid downstream changes.
+
+Add richer reconciliation logic:
+1. Implement threshold matrix in `services/reconciliation.py`.
+2. Emit `Alert` rows when breach occurs.
+3. Enhance trust score weighting.
+
+## Future Opportunities
+- Background worker (Celery / RQ) for async reconciliation & retries.
+- Rate limiting + circuit breaking around real platform clients.
+- Structured OpenTelemetry traces (current logger already provides request & operation context).
+- Idempotency keys (currently duplicate prevention handled by composite uniqueness + logic).
+- Bulk campaign/affiliate admin endpoints (guarded by roles).
+- Metrics API for aggregated dashboards (currently derivable through queries).
+
+---
+Historical design notes retained above the delimiter for context & decision traceability.
 
 ## Architecture
 
