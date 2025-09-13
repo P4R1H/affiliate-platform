@@ -11,7 +11,6 @@ Small stuff
 10) circuit breaker for external platforms
 
 Major reqs
-Platform APIs
 Reconcillioation
 Data cleaning 
  - Missing data, duplicates or discripencies
