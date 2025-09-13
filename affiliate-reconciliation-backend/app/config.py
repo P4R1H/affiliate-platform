@@ -107,6 +107,24 @@ ALERTING_SETTINGS: dict[str, float | int] = {
 	"repeat_overclaim_window_hours": 6,  # Consecutive high discrepancies escalate
 }
 
+# --------------------------- Data Quality Rules --------------------------- #
+DATA_QUALITY_SETTINGS: dict[str, float | int] = {
+	# Ratio thresholds
+	"max_ctr_pct": 0.35,              # clicks/views > 35% suspicious
+	"max_cvr_pct": 0.60,              # conversions/clicks > 60% suspicious
+	# Growth / spike detection
+	"max_views_growth_pct": 5.0,      # >500% vs previous report views
+	"max_clicks_growth_pct": 5.0,
+	"max_conversions_growth_pct": 5.0,
+	# Evidence requirement thresholds
+	"evidence_required_views": 50000, # If claimed views exceed & no evidence flag
+	# Non-monotonic allowances (allow small negative noise)
+	"monotonic_tolerance": 0.01,      # 1% tolerance for small decreases
+	# Minimum baseline to evaluate certain ratios
+	"min_views_for_ctr": 100,
+	"min_clicks_for_cvr": 20,
+}
+
 if INTEGRATIONS_RANDOM_SEED is not None:
 	import random
 	random.seed(INTEGRATIONS_RANDOM_SEED)
@@ -123,4 +141,5 @@ __all__ = [
 	"RETRY_POLICY",
 	"QUEUE_SETTINGS",
 	"ALERTING_SETTINGS",
+	"DATA_QUALITY_SETTINGS",
 ]
