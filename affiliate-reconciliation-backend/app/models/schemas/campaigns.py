@@ -18,8 +18,8 @@ class CampaignCreate(BaseModel):
     
     model_config = ConfigDict(json_schema_extra={
         "example": {
-            "name": "Summer Product Launch",
-            "advertiser_name": "Acme Corp",
+            "name": "Gamer Graveyard",
+            "advertiser_name": "Opera GX",
             "start_date": "2025-06-01",
             "end_date": "2025-08-31",
             "impression_cap": 1000000,
