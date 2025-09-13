@@ -13,15 +13,12 @@ from sqlalchemy.sql import func
 from app.database import Base
 
 class DiscrepancyLevel(str, enum.Enum):
-    LOW = "LOW"        # < 5% difference
-    MEDIUM = "MEDIUM"  # 5-20% difference  
-    HIGH = "HIGH"      # > 20% difference
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
 
-class ReconciliationStatus(str, enum.Enum):
-    MATCHED = "MATCHED"
-    DISCREPANCY = "DISCREPANCY" 
-    MISSING_PLATFORM_DATA = "MISSING_PLATFORM_DATA"
-    AFFILIATE_OVERCLAIMED = "AFFILIATE_OVERCLAIMED"  # A >> B case
+# Use centralized ReconciliationStatus enum from enums module (includes LOW/MEDIUM/HIGH granularity etc.)
+from .enums import ReconciliationStatus  # noqa: E402
 
 class ReconciliationLog(Base):
     __tablename__ = "reconciliation_logs"
