@@ -13,6 +13,7 @@ from app.models.schemas.posts import PostRead
 from app.models.schemas.base import ResponseBase
 from app.utils import get_logger, log_business_event, log_performance, process_post_url
 from app.services.trust_scoring import bucket_for_priority
+from app.services.data_quality_validators import evaluate_submission
 from app.jobs.reconciliation_job import ReconciliationJob
 
 router = APIRouter()
@@ -157,6 +158,17 @@ async def submit_post(
                 detail=f"Post already exists with id {existing_post.id}. Use PUT /submissions/{existing_post.id}/metrics to update metrics."
             )
         
+        # Evaluate data quality BEFORE persisting (previous report context comes from any existing post with same identifiers)
+        # For brand new post previous context is None
+        dq_flags = evaluate_submission(
+            db,
+            post=existing_post.post if existing_post else None,  # existing_post always None here due to earlier duplicate check
+            claimed_views=submission.claimed_views,
+            claimed_clicks=submission.claimed_clicks,
+            claimed_conversions=submission.claimed_conversions,
+            evidence_data=submission.evidence_data,
+        )
+
         # Create NEW post with processed URL
         post = Post(
             campaign_id=submission.campaign_id,
@@ -176,6 +188,7 @@ async def submit_post(
             claimed_clicks=submission.claimed_clicks,
             claimed_conversions=submission.claimed_conversions,
             evidence_data=submission.evidence_data,
+            suspicion_flags=dq_flags or None,
             submission_method=submission.submission_method,
             status="PENDING"
         )
@@ -426,6 +439,16 @@ async def update_post_metrics(
         if submission.description and submission.description != post.description:
             post.description = submission.description
         
+        # Data quality evaluation (previous report exists by definition here)
+        dq_flags = evaluate_submission(
+            db,
+            post=post,
+            claimed_views=submission.claimed_views,
+            claimed_clicks=submission.claimed_clicks,
+            claimed_conversions=submission.claimed_conversions,
+            evidence_data=submission.evidence_data,
+        )
+
         # Create new affiliate report for updated metrics
         affiliate_report = AffiliateReport(
             post_id=post.id,
@@ -433,6 +456,7 @@ async def update_post_metrics(
             claimed_clicks=submission.claimed_clicks,
             claimed_conversions=submission.claimed_conversions,
             evidence_data=submission.evidence_data,
+            suspicion_flags=dq_flags or None,
             submission_method=submission.submission_method,
             status="PENDING"
         )
