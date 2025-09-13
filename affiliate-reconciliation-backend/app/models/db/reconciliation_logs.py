@@ -16,6 +16,7 @@ class DiscrepancyLevel(str, enum.Enum):
     LOW = "LOW"
     MEDIUM = "MEDIUM"
     HIGH = "HIGH"
+    CRITICAL = "CRITICAL"
 
 # Use centralized ReconciliationStatus enum from enums module (includes LOW/MEDIUM/HIGH granularity etc.)
 from .enums import ReconciliationStatus  # noqa: E402

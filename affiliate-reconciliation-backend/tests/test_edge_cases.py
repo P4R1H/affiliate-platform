@@ -70,7 +70,7 @@ def test_alert_resolution_flow(client, db_session, platform_factory, affiliate_f
     db_session.flush()
     rec = ReconciliationLog(
         affiliate_report_id=report.id,
-        status=ReconciliationStatus.DISCREPANCY,
+        status=ReconciliationStatus.DISCREPANCY_HIGH,
         discrepancy_level=DiscrepancyLevel.HIGH,
         views_discrepancy=500,
         clicks_discrepancy=50,
@@ -78,7 +78,7 @@ def test_alert_resolution_flow(client, db_session, platform_factory, affiliate_f
         views_diff_pct=50.0,
         clicks_diff_pct=50.0,
         conversions_diff_pct=50.0,
-        notes="Large overclaim"
+        notes="Large discrepancy synthetic test"
     )
     db_session.add(rec)
     db_session.flush()

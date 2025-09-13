@@ -20,8 +20,8 @@ class ReconciliationResult(BaseModel):
     id: int
     affiliate_report_id: int
     platform_report_id: Optional[int]
-    status: str = Field(description="MATCHED, DISCREPANCY, MISSING_PLATFORM_DATA, etc.")
-    discrepancy_level: Optional[str] = Field(description="LOW, MEDIUM, HIGH")
+    status: str = Field(description="One of MATCHED, DISCREPANCY_LOW, DISCREPANCY_MEDIUM, DISCREPANCY_HIGH, AFFILIATE_OVERCLAIMED, MISSING_PLATFORM_DATA, INCOMPLETE_PLATFORM_DATA, UNVERIFIABLE, SKIPPED_SUSPENDED")
+    discrepancy_level: Optional[str] = Field(description="LOW, MEDIUM, HIGH, CRITICAL (CRITICAL only for severe overclaim)")
     
     # Discrepancy details
     views_discrepancy: int
