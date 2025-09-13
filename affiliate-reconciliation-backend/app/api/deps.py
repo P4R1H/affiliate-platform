@@ -1,6 +1,5 @@
 """
-FastAPI dependencies for authentication, database sessions, and common validations.
-Provides reusable dependency functions for consistent API behavior.
+Dependencies for authentication, database sessions, and common validations.
 """
 from typing import Generator, Optional
 from fastapi import Depends, HTTPException, status, Header
