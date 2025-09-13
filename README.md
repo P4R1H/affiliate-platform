@@ -3,19 +3,16 @@
 End-to-end system for receiving affiliate-reported performance metrics, normalizing and verifying them against platform-sourced data, and surfacing discrepancies & trust signals—optimized for extensibility and rapid iteration.
 
 ## Table of Contents
-- [System Overview](#system-overview)
-- [Why Mock Platforms](#why-mock-platforms)
-- [Why We Removed Image Proofs](#why-we-removed-image-proofs)
-- [Architecture](#architecture)
-- [Data Model & Integrity](#data-model--integrity)
-- [Reconciliation Lifecycle](#reconciliation-lifecycle)
-- [Enhancements vs Brief](#enhancements-vs-brief)
-- [Assumptions & Design Choices](#assumptions--design-choices)
-- [RBAC & Security](#rbac--security)
-- [API Surface (Implemented)](#api-surface-implemented)
-- [Running Locally](#running-locally)
-- [Extending the System](#extending-the-system)
-- [Future Opportunities](#future-opportunities)
+- [1. High‑Level Overview](#1-high-level-overview)
+- [2. Key Enhancements vs Original Brief](#2-key-enhancements-vs-original-brief)
+- [3. Core Design Choices (Retained Summary)](#3-core-design-choices-retained-summary)
+- [4. Minimal Architecture Snapshot](#4-minimal-architecture-snapshot)
+- [5. Tech Stack](#5-tech-stack)
+- [6. Quick Start](#6-quick-start)
+- [7. Documentation Index](#7-documentation-index)
+- [8. Current Capability Highlights](#8-current-capability-highlights)
+- [9. Extending](#9-extending)
+- [10. Roadmap Snapshot](#10-roadmap-snapshot)
 
 ## System Overview
 
@@ -107,20 +104,20 @@ MOCK_FAILURE_RATE=0.05
 ```
 
 ## 7. Documentation Index
-| Topic | File |
+| Topic | Link |
 |-------|------|
-| Architecture Overview | `affiliate-reconciliation-backend/docs/ARCHITECTURE_OVERVIEW.md` |
-| Data Model & Integrity | `affiliate-reconciliation-backend/docs/DATA_MODEL.md` |
-| Reconciliation Engine | `affiliate-reconciliation-backend/docs/RECONCILIATION_ENGINE.md` |
-| Queue & Worker | `affiliate-reconciliation-backend/docs/QUEUE_AND_WORKER.md` |
-| Alerting & Trust Scoring | `affiliate-reconciliation-backend/docs/ALERTING_AND_TRUST.md` |
-| Platform Integrations | `affiliate-reconciliation-backend/docs/INTEGRATIONS.md` |
-| API Reference | `affiliate-reconciliation-backend/docs/API_REFERENCE.md` |
-| Configuration Reference | `affiliate-reconciliation-backend/docs/CONFIGURATION.md` |
-| Setup / Deployment | `affiliate-reconciliation-backend/docs/SETUP_GUIDE.md` |
-| Data Flow Examples | `affiliate-reconciliation-backend/docs/DATA_FLOW_EXAMPLES.md` |
-| Testing Strategy | `affiliate-reconciliation-backend/docs/TESTING_STRATEGY.md` |
-| Roadmap | `affiliate-reconciliation-backend/docs/ROADMAP.md` |
+| Architecture Overview | [ARCHITECTURE_OVERVIEW.md](affiliate-reconciliation-backend/docs/ARCHITECTURE_OVERVIEW.md) |
+| Data Model & Integrity | [DATA_MODEL.md](affiliate-reconciliation-backend/docs/DATA_MODEL.md) |
+| Reconciliation Engine | [RECONCILIATION_ENGINE.md](affiliate-reconciliation-backend/docs/RECONCILIATION_ENGINE.md) |
+| Queue & Worker | [QUEUE_AND_WORKER.md](affiliate-reconciliation-backend/docs/QUEUE_AND_WORKER.md) |
+| Alerting & Trust Scoring | [ALERTING_AND_TRUST.md](affiliate-reconciliation-backend/docs/ALERTING_AND_TRUST.md) |
+| Platform Integrations | [INTEGRATIONS.md](affiliate-reconciliation-backend/docs/INTEGRATIONS.md) |
+| API Reference | [API_REFERENCE.md](affiliate-reconciliation-backend/docs/API_REFERENCE.md) |
+| Configuration Reference | [CONFIGURATION.md](affiliate-reconciliation-backend/docs/CONFIGURATION.md) |
+| Setup / Deployment | [SETUP_GUIDE.md](affiliate-reconciliation-backend/docs/SETUP_GUIDE.md) |
+| Data Flow Examples | [DATA_FLOW_EXAMPLES.md](affiliate-reconciliation-backend/docs/DATA_FLOW_EXAMPLES.md) |
+| Testing Strategy | [TESTING_STRATEGY.md](affiliate-reconciliation-backend/docs/TESTING_STRATEGY.md) |
+| Roadmap | [ROADMAP.md](affiliate-reconciliation-backend/docs/ROADMAP.md) |
 
 ## 8. Current Capability Highlights
 | Capability | Status |
