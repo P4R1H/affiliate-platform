@@ -6,10 +6,12 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session, selectinload
 import time
 from app.api.deps import get_db
-from app.models.db import ReconciliationLog, AffiliateReport, PlatformReport
+from app.models.db import ReconciliationLog, AffiliateReport, PlatformReport, Post
 from app.models.schemas.reconciliation import ReconciliationResult, ReconciliationTrigger
 from app.models.schemas.base import ResponseBase
 from app.utils import get_logger, log_business_event, log_performance
+from app.services.trust_scoring import bucket_for_priority
+from app.jobs.reconciliation_job import ReconciliationJob
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -24,76 +26,115 @@ async def trigger_reconciliation(
     request: Request,
     db: Session = Depends(get_db)
 ) -> ResponseBase:
-    """Manually trigger reconciliation for specific posts or all pending."""
+    """Manually enqueue reconciliation jobs.
+
+    Modes:
+      - post_id provided: enqueue latest affiliate report for that post (respect force_reprocess)
+      - no post_id: enqueue all PENDING affiliate reports lacking a reconciliation_log (or all if force_reprocess)
+    """
     start_time = time.time()
     request_id = request.headers.get("X-Request-ID", "unknown")
-    
+
     logger.info(
         "Manual reconciliation triggered",
         post_id=trigger_data.post_id,
         force_reprocess=trigger_data.force_reprocess,
         request_id=request_id
     )
-    
+
     try:
-        # TODO: Implement actual reconciliation logic
-        # For now, return mock response
-        
-        if trigger_data.post_id:
-            message = f"Reconciliation queued for post {trigger_data.post_id}"
-            posts_count = 1
+        queue = getattr(request.app.state, "reconciliation_queue", None)  # type: ignore[attr-defined]
+        if queue is None:
+            raise HTTPException(status_code=503, detail="Reconciliation queue not available")
+
+        enqueued: list[int] = []
+
+        def enqueue_for_report(report: AffiliateReport):
+            trust_score = float(getattr(report.post.affiliate, "trust_score", 0.5) or 0.5)
+            bucket = bucket_for_priority(trust_score)
+            priority_label = {
+                "critical": "high",
+                "low_trust": "high",
+                "normal": "normal",
+                "high_trust": "low",
+            }.get(bucket, "normal")
+            if report.suspicion_flags and priority_label != "high":
+                priority_label = "high"
+            job = ReconciliationJob(affiliate_report_id=report.id, priority=priority_label)
+            queue.enqueue(job, priority=priority_label)
+            enqueued.append(report.id)
+            logger.info(
+                "Manual reconciliation job enqueued",
+                affiliate_report_id=report.id,
+                post_id=report.post_id,
+                priority=priority_label,
+                trust_bucket=bucket,
+                suspicion_flags=bool(report.suspicion_flags),
+                request_id=request_id
+            )
+
+        if trigger_data.post_id is not None:
+            post: Post | None = db.query(Post).options(selectinload(Post.affiliate_reports), selectinload(Post.affiliate)).filter(Post.id == trigger_data.post_id).first()
+            if not post:
+                raise HTTPException(status_code=404, detail=f"Post {trigger_data.post_id} not found")
+            # choose most recent affiliate report
+            if not post.affiliate_reports:
+                raise HTTPException(status_code=400, detail="Post has no affiliate reports to reconcile")
+            # Determine latest report by submitted_at (fallback to id for safety)
+            latest = max(
+                post.affiliate_reports,
+                key=lambda r: (getattr(r, "submitted_at", None) or 0, r.id)
+            )
+            if latest.reconciliation_log and not trigger_data.force_reprocess:
+                raise HTTPException(status_code=409, detail="Latest report already reconciled. Use force_reprocess to override.")
+            enqueue_for_report(latest)
         else:
-            message = "Reconciliation queued for all pending posts"
-            posts_count = db.query(AffiliateReport).filter(
-                AffiliateReport.status == "PENDING"
-            ).count()
-        
-        # Log business event
+            # bulk mode
+            query = db.query(AffiliateReport).join(Post).options(
+                selectinload(AffiliateReport.post).selectinload(Post.affiliate)
+            )
+            if not trigger_data.force_reprocess:
+                query = query.filter(AffiliateReport.reconciliation_log == None)  # noqa: E711
+            reports = query.limit(1000).all()  # safety limit
+            for report in reports:
+                enqueue_for_report(report)
+
+        posts_count = len(enqueued)
+        duration_ms = (time.time() - start_time) * 1000
+
         log_business_event(
             event_type="manual_reconciliation_triggered",
             details={
                 "post_id": trigger_data.post_id,
                 "force_reprocess": trigger_data.force_reprocess,
-                "estimated_posts": posts_count
+                "reports_enqueued": posts_count
             },
             request_id=request_id
         )
-        
-        # Log performance
-        duration_ms = (time.time() - start_time) * 1000
         log_performance(
             operation="trigger_reconciliation",
             duration_ms=duration_ms,
-            additional_data={"posts_to_process": posts_count}
+            additional_data={"reports_enqueued": posts_count}
         )
-        
-        logger.info(
-            "Reconciliation trigger completed",
-            posts_queued=posts_count,
-            duration_ms=duration_ms,
-            request_id=request_id
-        )
-        
         return ResponseBase(
             success=True,
-            message=message,
+            message=f"Enqueued {posts_count} reconciliation job(s)",
             data={
-                "posts_queued": posts_count,
-                "estimated_completion": f"{posts_count * 2}-{posts_count * 5} minutes"
+                "reports_enqueued": posts_count,
+                "affiliate_report_ids": enqueued,
+                "queue_depth": queue.depth(),
             }
         )
-        
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception as e:  # pragma: no cover
         logger.error(
-            "Reconciliation trigger failed",
+            "Manual reconciliation trigger failed",
             error=str(e),
             request_id=request_id,
             exc_info=True
         )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error during reconciliation trigger"
-        )
+        raise HTTPException(status_code=500, detail="Failed to enqueue reconciliation")
 
 @router.get(
     "/results",
@@ -182,4 +223,80 @@ async def get_reconciliation_results(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error while retrieving reconciliation results"
         )
+
+@router.get(
+    "/queue",
+    response_model=ResponseBase,
+    summary="Get reconciliation queue snapshot"
+)
+async def queue_snapshot(request: Request) -> ResponseBase:
+    request_id = request.headers.get("X-Request-ID", "unknown")
+    queue = getattr(request.app.state, "reconciliation_queue", None)  # type: ignore[attr-defined]
+    if queue is None:
+        raise HTTPException(status_code=503, detail="Reconciliation queue not available")
+    snap = queue.snapshot()
+    return ResponseBase(success=True, message="Queue snapshot", data={"snapshot": snap, "request_id": request_id})
+
+
+def _build_reconciliation_result(log: ReconciliationLog) -> ReconciliationResult:
+    post = log.affiliate_report.post
+    # Affiliate (claimed) metrics
+    from app.models.schemas.base import UnifiedMetrics
+    affiliate_metrics = UnifiedMetrics(
+        views=log.affiliate_report.claimed_views,
+        clicks=log.affiliate_report.claimed_clicks,
+        conversions=log.affiliate_report.claimed_conversions,
+        post_url=post.url,
+        platform_name=post.platform.name if post.platform else "unknown",
+    timestamp=log.affiliate_report.submitted_at,  # type: ignore[arg-type]
+        source="affiliate_claim",
+    )
+    platform_metrics = None
+    if log.platform_report:
+        pr = log.platform_report
+        platform_metrics = UnifiedMetrics(
+            views=pr.views,
+            clicks=pr.clicks,
+            conversions=pr.conversions,
+            post_url=post.url,
+            platform_name=post.platform.name if post.platform else "unknown",
+            timestamp=pr.fetched_at,  # type: ignore[arg-type]
+            source="platform_api",
+        )
+    return ReconciliationResult(
+        id=log.id,
+        affiliate_report_id=log.affiliate_report_id,
+        platform_report_id=log.platform_report_id,
+        status=log.status.value,
+        discrepancy_level=log.discrepancy_level.value if log.discrepancy_level else None,
+        views_discrepancy=log.views_discrepancy,
+        clicks_discrepancy=log.clicks_discrepancy,
+        conversions_discrepancy=log.conversions_discrepancy,
+        views_diff_pct=float(log.views_diff_pct) if log.views_diff_pct is not None else None,
+        clicks_diff_pct=float(log.clicks_diff_pct) if log.clicks_diff_pct is not None else None,
+        conversions_diff_pct=float(log.conversions_diff_pct) if log.conversions_diff_pct is not None else None,
+        notes=log.notes,
+    processed_at=log.processed_at,  # type: ignore[arg-type]
+        affiliate_metrics=affiliate_metrics,
+        platform_metrics=platform_metrics,
+    )
+
+
+@router.get(
+    "/logs/{affiliate_report_id}",
+    response_model=ReconciliationResult,
+    summary="Get reconciliation result for a specific affiliate report"
+)
+async def get_reconciliation_result(
+    affiliate_report_id: int,
+    request: Request,
+    db: Session = Depends(get_db)
+) -> ReconciliationResult:
+    log_entry = db.query(ReconciliationLog).options(
+        selectinload(ReconciliationLog.affiliate_report).selectinload(AffiliateReport.post).selectinload(Post.platform),
+        selectinload(ReconciliationLog.platform_report)
+    ).filter(ReconciliationLog.affiliate_report_id == affiliate_report_id).first()
+    if not log_entry:
+        raise HTTPException(status_code=404, detail="Reconciliation log not found for affiliate report")
+    return _build_reconciliation_result(log_entry)
 

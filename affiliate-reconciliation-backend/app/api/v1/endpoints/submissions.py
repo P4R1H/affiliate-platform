@@ -12,6 +12,8 @@ from app.models.schemas.affiliates import AffiliatePostSubmission
 from app.models.schemas.posts import PostRead
 from app.models.schemas.base import ResponseBase
 from app.utils import get_logger, log_business_event, log_performance, process_post_url
+from app.services.trust_scoring import bucket_for_priority
+from app.jobs.reconciliation_job import ReconciliationJob
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -209,14 +211,50 @@ async def submit_post(
             request_id=request_id
         )
         
-        # Queue reconciliation job for this affiliate report
-        # TODO: Replace with actual job queue implementation
-        logger.info(
-            "Reconciliation job queued for new post",
-            affiliate_report_id=affiliate_report.id,
-            post_id=post.id,
-            request_id=request_id
-        )
+        # Queue reconciliation job for this affiliate report (dynamic priority)
+        try:
+            queue = getattr(request.app.state, "reconciliation_queue", None)  # type: ignore[attr-defined]
+            if queue is None:
+                logger.warning(
+                    "Reconciliation queue not available – job not enqueued (startup race?)",
+                    affiliate_report_id=affiliate_report.id,
+                    request_id=request_id
+                )
+            else:
+                trust_score = float(getattr(current_affiliate, "trust_score", 0.5) or 0.5)
+                trust_bucket = bucket_for_priority(trust_score)
+                # Map trust bucket -> base queue priority label
+                priority_map = {
+                    "critical": "high",
+                    "low_trust": "high",
+                    "normal": "normal",
+                    "high_trust": "low",
+                }
+                priority_label = priority_map.get(trust_bucket, "normal")
+                # Escalate if suspicion flags present
+                susp_flags = affiliate_report.suspicion_flags or {}
+                if susp_flags and priority_label != "high":
+                    priority_label = "high"
+                job = ReconciliationJob(affiliate_report_id=affiliate_report.id, priority=priority_label)
+                queue.enqueue(job, priority=priority_label)
+                logger.info(
+                    "Reconciliation job enqueued",
+                    affiliate_report_id=affiliate_report.id,
+                    post_id=post.id,
+                    priority=priority_label,
+                    trust_bucket=trust_bucket,
+                    trust_score=trust_score,
+                    suspicion_flags=bool(susp_flags),
+                    request_id=request_id
+                )
+        except Exception as q_err:  # pragma: no cover
+            logger.error(
+                "Failed to enqueue reconciliation job",
+                affiliate_report_id=affiliate_report.id,
+                error=str(q_err),
+                request_id=request_id,
+                exc_info=True
+            )
         
         # Log performance
         duration_ms = (time.time() - start_time) * 1000
@@ -242,7 +280,7 @@ async def submit_post(
         
         return ResponseBase(
             success=True,
-            message="Post submitted successfully. Reconciliation job queued.",
+            message="Post submitted successfully. Reconciliation job scheduled.",
             data={
                 "post_id": post.id,
                 "affiliate_report_id": affiliate_report.id,
@@ -423,12 +461,47 @@ async def update_post_metrics(
         )
         
         # Queue reconciliation job for this updated report
-        logger.info(
-            "Reconciliation job queued for updated metrics",
-            affiliate_report_id=affiliate_report.id,
-            post_id=post.id,
-            request_id=request_id
-        )
+        try:
+            queue = getattr(request.app.state, "reconciliation_queue", None)  # type: ignore[attr-defined]
+            if queue is None:
+                logger.warning(
+                    "Reconciliation queue not available – job not enqueued (startup race?)",
+                    affiliate_report_id=affiliate_report.id,
+                    request_id=request_id
+                )
+            else:
+                trust_score = float(getattr(current_affiliate, "trust_score", 0.5) or 0.5)
+                trust_bucket = bucket_for_priority(trust_score)
+                priority_map = {
+                    "critical": "high",
+                    "low_trust": "high",
+                    "normal": "normal",
+                    "high_trust": "low",
+                }
+                priority_label = priority_map.get(trust_bucket, "normal")
+                susp_flags = affiliate_report.suspicion_flags or {}
+                if susp_flags and priority_label != "high":
+                    priority_label = "high"
+                job = ReconciliationJob(affiliate_report_id=affiliate_report.id, priority=priority_label)
+                queue.enqueue(job, priority=priority_label)
+                logger.info(
+                    "Reconciliation job enqueued",
+                    affiliate_report_id=affiliate_report.id,
+                    post_id=post.id,
+                    priority=priority_label,
+                    trust_bucket=trust_bucket,
+                    trust_score=trust_score,
+                    suspicion_flags=bool(susp_flags),
+                    request_id=request_id
+                )
+        except Exception as q_err:  # pragma: no cover
+            logger.error(
+                "Failed to enqueue reconciliation job",
+                affiliate_report_id=affiliate_report.id,
+                error=str(q_err),
+                request_id=request_id,
+                exc_info=True
+            )
         
         # Log performance
         duration_ms = (time.time() - start_time) * 1000
@@ -452,7 +525,7 @@ async def update_post_metrics(
         
         return ResponseBase(
             success=True,
-            message="Post metrics updated successfully. Reconciliation job queued.",
+            message="Post metrics updated successfully. Reconciliation job scheduled.",
             data={
                 "post_id": post.id,
                 "affiliate_report_id": affiliate_report.id,
