@@ -10,7 +10,7 @@ from app.models.db.alerts import AlertType
 from app.models.db.reconciliation_logs import DiscrepancyLevel
 from app.models.db.affiliate_reports import SubmissionMethod
 from app.services.trust_scoring import apply_trust_event
-from app.services.reconciliation_engine import run_reconciliation
+from app.services.reconciliation_engine import run_reconciliation  # legacy direct call (avoid in tests below where replaced)
 
 # Helper: wait for reconciliation log to appear / reach status
 def wait_for_log(db: Session, report_id: int, *, timeout=5.0):
@@ -83,8 +83,8 @@ def test_reconciliation_matched_flow(client: TestClient, db_session: Session, se
     assert r.status_code == 201, r.text
     report_id = r.json()["data"]["affiliate_report_id"]
     # Direct reconciliation (bypass background worker & endpoint for determinism)
-    run_reconciliation(db_session, report_id)
-    log = db_session.query(ReconciliationLog).filter_by(affiliate_report_id=report_id).first()
+    # Wait for worker-created reconciliation log (queue processing)
+    log = wait_for_log(db_session, report_id)
     assert log is not None
     assert log.status == ReconciliationStatus.MATCHED
     assert log.max_discrepancy_pct in (0, 0.0)
@@ -105,8 +105,7 @@ def test_reconciliation_overclaim_alert(client: TestClient, db_session: Session,
     r = client.post("/api/v1/submissions/", json=payload, headers=auth_header)
     assert r.status_code == 201
     report_id = r.json()["data"]["affiliate_report_id"]
-    run_reconciliation(db_session, report_id)
-    log = db_session.query(ReconciliationLog).filter_by(affiliate_report_id=report_id).first()
+    log = wait_for_log(db_session, report_id)
     assert log is not None
     assert log.status == ReconciliationStatus.AFFILIATE_OVERCLAIMED
     # Alert should be created
@@ -131,8 +130,7 @@ def test_reconciliation_high_discrepancy_repeat_escalation(client: TestClient, d
     r = client.post("/api/v1/submissions/", json=payload, headers=auth_header)
     assert r.status_code == 201
     rep1 = r.json()["data"]["affiliate_report_id"]
-    run_reconciliation(db_session, rep1)
-    log1 = db_session.query(ReconciliationLog).filter_by(affiliate_report_id=rep1).first()
+    log1 = wait_for_log(db_session, rep1)
     assert log1 is not None
     assert log1.status in {ReconciliationStatus.DISCREPANCY_HIGH, ReconciliationStatus.DISCREPANCY_MEDIUM, ReconciliationStatus.DISCREPANCY_LOW}
     # An alert might be created only for DISCREPANCY_HIGH; store initial alert count
@@ -142,8 +140,7 @@ def test_reconciliation_high_discrepancy_repeat_escalation(client: TestClient, d
     payload2 = payload | {"post_url": "https://reddit.com/r/test/highdisc2", "title": "Post4"}
     r2 = client.post("/api/v1/submissions/", json=payload2, headers=auth_header)
     rep2 = r2.json()["data"]["affiliate_report_id"]
-    run_reconciliation(db_session, rep2)
-    log2 = db_session.query(ReconciliationLog).filter_by(affiliate_report_id=rep2).first()
+    log2 = wait_for_log(db_session, rep2)
     assert log2 is not None
     # Count new alerts; if both high discrepancy should be >= initial_alerts + 1
     final_alerts = db_session.query(Alert).count()
@@ -165,14 +162,14 @@ def test_reconciliation_missing_data_retry(client: TestClient, db_session: Sessi
     }
     r = client.post("/api/v1/submissions/", json=payload, headers=auth_header)
     rep_id = r.json()["data"]["affiliate_report_id"]
-    run_reconciliation(db_session, rep_id)
-    log = db_session.query(ReconciliationLog).filter_by(affiliate_report_id=rep_id).first()
+    log = wait_for_log(db_session, rep_id)
     assert log is not None
     assert log.status == ReconciliationStatus.MISSING_PLATFORM_DATA
     # scheduled_retry_at should be set (presence test)
     assert log.scheduled_retry_at is not None
 
 # 5. Incomplete platform data (partial metrics) -> INCOMPLETE_PLATFORM_DATA
+# Ensure adapter returns at least one real metric so classifier path marks it incomplete not missing
 def test_reconciliation_incomplete_data(client: TestClient, db_session: Session, seeded_platform, affiliate, campaign, auth_header):
     install_mock_adapter("reddit", {"views": 100, "clicks": None, "conversions": None})
     payload = {
@@ -187,10 +184,9 @@ def test_reconciliation_incomplete_data(client: TestClient, db_session: Session,
     }
     r = client.post("/api/v1/submissions/", json=payload, headers=auth_header)
     rep_id = r.json()["data"]["affiliate_report_id"]
-    run_reconciliation(db_session, rep_id)
-    log = db_session.query(ReconciliationLog).filter_by(affiliate_report_id=rep_id).first()
+    log = wait_for_log(db_session, rep_id)
     assert log is not None
-    assert log.status == ReconciliationStatus.INCOMPLETE_PLATFORM_DATA
+    assert log.status == ReconciliationStatus.INCOMPLETE_PLATFORM_DATA, f"Got {log.status} with missing_fields={log.missing_fields}"
     assert log.confidence_ratio is not None and float(log.confidence_ratio) < 1
 
 # 6. Priority influenced by suspicion flags (evidence absence triggers dq flags via evaluate_submission maybe)
@@ -217,8 +213,8 @@ def test_priority_enqueue_with_suspicion(client: TestClient, db_session: Session
     r2 = client.post("/api/v1/submissions/", json=suspicious, headers=auth_header)
     assert r2.status_code == 201
     # Trigger reconciliation for both
-    run_reconciliation(db_session, r1.json()["data"]["affiliate_report_id"])  # first
-    run_reconciliation(db_session, r2.json()["data"]["affiliate_report_id"])  # second
+    wait_for_log(db_session, r1.json()["data"]["affiliate_report_id"])  # first
+    wait_for_log(db_session, r2.json()["data"]["affiliate_report_id"])  # second
     # Verify logs created
     rep1 = r1.json()["data"]["affiliate_report_id"]
     rep2 = r2.json()["data"]["affiliate_report_id"]
@@ -246,24 +242,23 @@ def test_trust_score_evolution(client: TestClient, db_session: Session, seeded_p
     }
     r1 = client.post("/api/v1/submissions/", json=payload, headers=auth_header)
     rep1 = r1.json()["data"]["affiliate_report_id"]
-    run_reconciliation(db_session, rep1)
+    wait_for_log(db_session, rep1)
     db_session.refresh(affiliate)
     after_match = float(affiliate.trust_score)
     assert after_match >= base_trust
 
-    # Step 2: Medium discrepancy (~15% diff) to trigger medium discrepancy trust event (-0.03)
-    # Claimed lower than platform to avoid overclaim; difference around 15%.
-    install_mock_adapter("reddit", {"views": 115, "clicks": 11, "conversions": 1})
+    # Step 2: Medium discrepancy (~18% diff) to trigger medium discrepancy trust event (-0.03)
+    install_mock_adapter("reddit", {"views": 118, "clicks": 12, "conversions": 1})
     payload2 = payload | {
         "post_url": "https://reddit.com/r/test/trust2",
         "title": "T2",
-        "claimed_views": 100,  # ~13% lower than platform
+        "claimed_views": 100,  # ~15–18% lower than platform
         "claimed_clicks": 10,
         "claimed_conversions": 1
     }
     r2 = client.post("/api/v1/submissions/", json=payload2, headers=auth_header)
     rep2 = r2.json()["data"]["affiliate_report_id"]
-    run_reconciliation(db_session, rep2)
+    wait_for_log(db_session, rep2)
     db_session.refresh(affiliate)
     after_medium = float(affiliate.trust_score)
     assert after_medium < after_match  # negative delta applied
@@ -279,7 +274,7 @@ def test_trust_score_evolution(client: TestClient, db_session: Session, seeded_p
     }
     r3 = client.post("/api/v1/submissions/", json=payload3, headers=auth_header)
     rep3 = r3.json()["data"]["affiliate_report_id"]
-    run_reconciliation(db_session, rep3)
+    wait_for_log(db_session, rep3)
     db_session.refresh(affiliate)
     final_trust = float(affiliate.trust_score)
 

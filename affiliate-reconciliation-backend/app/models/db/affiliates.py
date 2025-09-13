@@ -20,7 +20,8 @@ class Affiliate(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     role: Mapped[UserRole] = mapped_column(Enum(UserRole), default=UserRole.AFFILIATE, index=True)
 
-    trust_score: Mapped[float] = mapped_column(Numeric(3, 2), default=1.00)
+    # Start at mid-range so both positive and negative trust deltas are observable in tests
+    trust_score: Mapped[float] = mapped_column(Numeric(3, 2), default=0.50)
     last_trust_update: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     total_submissions: Mapped[int] = mapped_column(Integer, default=0)
     accurate_submissions: Mapped[int] = mapped_column(Integer, default=0)

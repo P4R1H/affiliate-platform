@@ -44,16 +44,24 @@ logger = get_logger(__name__)
 
 
 def _ensure_log(session: Session, report: AffiliateReport) -> ReconciliationLog:
+    # Robust single-row get/create with retry for rare race conditions
     if report.reconciliation_log:
         return report.reconciliation_log
-    log = ReconciliationLog(
-        affiliate_report_id=report.id,
-        status=ReconciliationStatus.MISSING_PLATFORM_DATA,  # placeholder initial
-        attempt_count=0,
-    )
-    session.add(log)
-    session.flush()
-    return log
+    # Attempt insert; on integrity error (unique constraint) load existing
+    from sqlalchemy.exc import IntegrityError
+    try:
+        log = ReconciliationLog(
+            affiliate_report_id=report.id,
+            status=ReconciliationStatus.MISSING_PLATFORM_DATA,  # placeholder initial
+            attempt_count=0,
+        )
+        session.add(log)
+        session.flush()
+        return log
+    except IntegrityError:
+        session.rollback()
+        existing = session.query(ReconciliationLog).filter_by(affiliate_report_id=report.id).one()
+        return existing
 
 
 def _schedule_retry(status: ReconciliationStatus, attempt_count: int, submitted_at: datetime, now: datetime) -> datetime | None:
@@ -180,7 +188,23 @@ def run_reconciliation(session: Session, affiliate_report_id: int) -> Dict[str, 
     retry_scheduled_flag = retry_time is not None
     maybe_create_alert(session, log, affiliate=affiliate, post=post, retry_scheduled=retry_scheduled_flag)
 
-    session.commit()
+    from sqlalchemy.orm.exc import StaleDataError
+    try:
+        session.commit()
+    except StaleDataError as sde:  # rare race condition on SQLite rowcount heuristics
+        logger.warning(
+            "StaleDataError on commit – retrying once",
+            report_id=report.id,
+            error=str(sde),
+        )
+        session.rollback()
+        # Merge current in-memory state and retry
+        try:
+            session.merge(log)
+            session.commit()
+        except StaleDataError:
+            logger.error("Second StaleDataError on commit – aborting", report_id=report.id)
+            raise
 
     return {
         "affiliate_report_id": report.id,

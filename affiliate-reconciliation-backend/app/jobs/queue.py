@@ -146,6 +146,18 @@ class PriorityDelayQueue:
             self._shutdown = True
             self._cv.notify_all()
 
+    # ----------------------------- test utilities ----------------------------- #
+    def purge(self) -> None:
+        """Remove all queued (ready + scheduled) jobs.
+
+        Intended for test isolation only; not used in production runtime.
+        Safe under lock; any worker currently processing a job continues unaffected.
+        """
+        with self._lock:
+            self._ready_heap.clear()
+            self._scheduled_heap.clear()
+            self._cv.notify_all()
+
     # ----------------------------- inspection ----------------------------- #
     def depth(self) -> int:
         return len(self._ready_heap) + len(self._scheduled_heap)

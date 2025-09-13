@@ -95,8 +95,10 @@ def test_alert_resolution_flow(client, db_session, platform_factory, affiliate_f
     # GET alerts
     r = client.get("/api/v1/alerts/")
     assert r.status_code == 200
-    alerts = r.json()
-    assert len(alerts) == 1
+    alerts_all = r.json()
+    # Filter to alerts for this affiliate's reconciliation log only (avoid cross-test leakage if isolation missed)
+    alerts = [a for a in alerts_all if a.get("reconciliation_log_id") == rec.id]
+    assert len(alerts) == 1, f"Expected 1 alert for this test rec, got {len(alerts)} total={len(alerts_all)}"
 
     # Resolve alert
     resolution_payload = {"resolved_by": "qa_user", "resolution_notes": "Validated issue"}

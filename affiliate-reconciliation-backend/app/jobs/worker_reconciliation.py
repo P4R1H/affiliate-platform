@@ -15,6 +15,9 @@ from app.utils import get_logger
 
 logger = get_logger(__name__)
 
+# Debug instrumentation store (test visibility)
+LAST_EXCEPTIONS: list[dict] = []
+
 
 class ReconciliationWorker:
     def __init__(self, queue: PriorityDelayQueue, *, poll_timeout: float = 5.0):
@@ -56,8 +59,16 @@ class ReconciliationWorker:
             logger.info("Reconciliation completed", report_id=job.affiliate_report_id, status=result.get("status"))
         except Exception as e:
             logger.error("Reconciliation job failed", report_id=job.affiliate_report_id, error=str(e), exc_info=True)
+            try:  # store structured diagnostic for tests
+                LAST_EXCEPTIONS.append({
+                    "report_id": job.affiliate_report_id,
+                    "error": str(e),
+                    "type": type(e).__name__,
+                })
+            except Exception:  # pragma: no cover - defensive
+                pass
         finally:
             session.close()
 
 
-__all__ = ["ReconciliationWorker"]
+__all__ = ["ReconciliationWorker", "LAST_EXCEPTIONS"]

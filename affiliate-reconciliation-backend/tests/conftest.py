@@ -29,9 +29,10 @@ from app.models.db import platforms, campaigns, affiliates, posts, affiliate_rep
 from app.models.db.enums import CampaignStatus, UserRole
 from app.jobs.queue import PriorityDelayQueue
 from app.jobs.worker_reconciliation import ReconciliationWorker
+from app.utils.circuit_breaker import GLOBAL_CIRCUIT_BREAKER
 
 @pytest.fixture(scope="session", autouse=True)
-def reconciliation_queue():
+def reconciliation_queue(create_test_db):  # depend on DB creation
     """Provide a queue instance on app.state for endpoints during tests.
 
     The production app sets this up in lifespan. Tests bypass lifespan so we replicate here.
@@ -44,20 +45,50 @@ def reconciliation_queue():
     yield queue
     queue.shutdown()
 
-# Use in-memory SQLite for isolation & speed
-SQLALCHEMY_TEST_URL = "sqlite+pysqlite:///:memory:"  # shared memory per process
+@pytest.fixture(autouse=True)
+def _isolate_test_state(reconciliation_queue, db_session):  # type: ignore[unused-argument]
+        """Ensure per-test isolation for in-memory single-process components.
+
+        Resets:
+            - In-memory circuit breaker (failure counters / state) to avoid cross-test spill.
+            - In-memory queue contents (purge) so no leftover scheduled retries inflate later tests.
+        """
+        # Pre-test cleanup (in case prior test aborted mid-way)
+        reconciliation_queue.purge()
+        GLOBAL_CIRCUIT_BREAKER._states.clear()  # type: ignore[attr-defined]
+        yield
+        # Post-test cleanup
+        reconciliation_queue.purge()
+        GLOBAL_CIRCUIT_BREAKER._states.clear()  # type: ignore[attr-defined]
+
+# Use file-based SQLite for thread-safe multi-connection access (worker thread + test thread)
+# In-memory with StaticPool (single connection) caused cross-thread flush anomalies.
+SQLALCHEMY_TEST_URL = "sqlite+pysqlite:///./test_worker.db"
 engine = create_engine(
     SQLALCHEMY_TEST_URL,
     connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# --- Critical: ensure background worker threads use the in-memory test DB ---
+# The worker module imported SessionLocal at import time (binding to file-based DB).
+# We rebind both the app.database module attribute and the worker module attribute
+# to our in-memory TestingSessionLocal so reconciliations performed in the worker
+# see the same data created via API requests in tests.
+import app.database as _app_database  # noqa: E402
+_app_database.SessionLocal = TestingSessionLocal  # type: ignore
+import app.jobs.worker_reconciliation as _worker_mod  # noqa: E402
+_worker_mod.SessionLocal = TestingSessionLocal  # type: ignore
 
 @pytest.fixture(scope="session", autouse=True)
 def create_test_db():
     Base.metadata.create_all(bind=engine)
     yield
     Base.metadata.drop_all(bind=engine)
+    try:
+        os.remove("test_worker.db")
+    except OSError:
+        pass
 
 @pytest.fixture()
 def db_session():
