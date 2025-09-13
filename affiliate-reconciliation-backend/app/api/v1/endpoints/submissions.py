@@ -11,8 +11,7 @@ from app.models.db import Post, AffiliateReport, Affiliate, Campaign, Platform
 from app.models.schemas.affiliates import AffiliatePostSubmission
 from app.models.schemas.posts import PostRead
 from app.models.schemas.base import ResponseBase
-from app.utils import get_logger, log_business_event, log_performance
-from app.utils.link_processing import process_post_url
+from app.utils import get_logger, log_business_event, log_performance, process_post_url
 
 router = APIRouter()
 logger = get_logger(__name__)

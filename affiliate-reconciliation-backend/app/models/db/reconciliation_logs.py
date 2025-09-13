@@ -2,7 +2,7 @@ from __future__ import annotations
 """SQLAlchemy model for reconciliation logs."""
 import enum
 from typing import TYPE_CHECKING
-from sqlalchemy import Integer, Text, DateTime, ForeignKey, Enum, Numeric
+from sqlalchemy import Integer, Text, DateTime, ForeignKey, Enum, Numeric, Boolean, JSON
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -42,6 +42,19 @@ class ReconciliationLog(Base):
 
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     processed_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Retry / attempt tracking (single-row strategy; values updated on each attempt)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_attempt_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    scheduled_retry_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Aggregated metrics & meta
+    max_discrepancy_pct: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
+    confidence_ratio: Mapped[float | None] = mapped_column(Numeric(4, 3), nullable=True)
+    missing_fields: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    rate_limited: Mapped[bool] = mapped_column(Boolean, default=False)
+    elapsed_hours: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
+    trust_delta: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     affiliate_report: Mapped["AffiliateReport"] = relationship("AffiliateReport", back_populates="reconciliation_log")
     platform_report: Mapped[PlatformReport | None] = relationship("PlatformReport", back_populates="reconciliation_log")

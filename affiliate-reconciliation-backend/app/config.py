@@ -1,11 +1,16 @@
-"""Core application configuration.
+"""Core application configuration & tunable governance rules.
 
-Intentionally minimal: only cross-cutting or environment-driven values.
-Platform mock tuning stays local to each integration module to avoid bloat.
+All business rules that may evolve (tolerances, growth allowances, trust deltas,
+retry/circuit thresholds, queue priorities, alerting) are centralized here so
+they can be adjusted without diving into service logic. Real deployments would
+likely override via environment variables or a dynamic configuration service;
+for this MVP we keep them as module constants (mutable dicts allowed if tests
+monkeypatch values).
 """
 from __future__ import annotations
 
 import os
+from typing import Final
 
 _seed_env = os.getenv("INTEGRATIONS_RANDOM_SEED")
 INTEGRATIONS_RANDOM_SEED: int | None = int(_seed_env) if _seed_env and _seed_env.strip() else None
@@ -16,8 +21,106 @@ MOCK_FAILURE_RATE: float = float(os.getenv("MOCK_FAILURE_RATE", "0.05"))
 # Network timeout for the ONLY real outbound call (Reddit link resolution)
 REDDIT_LINK_RESOLVE_TIMEOUT: float = float(os.getenv("REDDIT_LINK_RESOLVE_TIMEOUT", "10"))
 
+# ----------------------------- Reconciliation ----------------------------- #
+RECONCILIATION_SETTINGS: dict[str, float | dict[str, float]] = {
+	# Base tolerance BEFORE growth allowance. Diff within this is a match.
+	"base_tolerance_pct": 0.05,  # 5%
+	# Discrepancy tier thresholds (upper bounds). > medium_max => HIGH.
+	"discrepancy_tiers": {
+		"low_max": 0.10,     # 10%
+		"medium_max": 0.20,  # 20%
+	},
+	# Overclaim threshold: affiliate significantly above platform.
+	"overclaim_threshold_pct": 0.20,   # 20%
+	"overclaim_critical_pct": 0.50,    # 50% triggers CRITICAL alert
+	# Allowance for organic growth between submission & fetch.
+	"growth_per_hour_pct": 0.10,       # 10% per hour
+	"growth_cap_hours": 24,            # Cap growth adjustment window
+}
+
+# ------------------------------ Trust Scoring ----------------------------- #
+# Trust score is maintained in [0,1] range for MVP (float). Deltas reference
+# additive adjustments that will later be clamped.
+TRUST_SCORING: dict[str, float | dict[str, float]] = {
+	"min_score": 0.0,
+	"max_score": 1.0,
+	# Event → delta (positive or negative). These are *not* percentages, just
+	# additive adjustments; tune conservatively to avoid volatility.
+	"events": {
+		"perfect_match": +0.01,
+		"minor_discrepancy": -0.01,
+		"medium_discrepancy": -0.03,
+		"high_discrepancy": -0.05,
+		"overclaim": -0.10,
+		"impossible_submission": -0.15,
+	},
+	# Thresholds for operational behaviors (future use / prioritisation)
+	"reduced_frequency_threshold": 0.75,
+	"increased_monitoring_threshold": 0.50,
+	"manual_review_threshold": 0.25,
+}
+
+# ----------------------------- Circuit Breaker ---------------------------- #
+CIRCUIT_BREAKER: dict[str, int | float] = {
+	"failure_threshold": 5,          # Consecutive failures before OPEN
+	"open_cooldown_seconds": 300,    # Stay OPEN for 5 minutes
+	"half_open_probe_count": 3,      # Probes allowed in HALF_OPEN
+}
+
+# --------------------------------- Backoff -------------------------------- #
+BACKOFF_POLICY: dict[str, int | float] = {
+	"base_seconds": 1,
+	"factor": 2,          # Exponential factor
+	"max_seconds": 60,
+	"max_attempts": 3,
+	"jitter_pct": 0.10,   # +/-10% jitter
+}
+
+# ------------------------------- Retry Policy ----------------------------- #
+RETRY_POLICY: dict[str, dict[str, int | float]] = {
+	# Missing platform data (timeouts, rate limiting) scenario
+	"missing_platform_data": {
+		"initial_delay_minutes": 30,
+		"max_attempts": 5,
+		"window_hours": 24,
+	},
+	# Partial data (optional second fetch attempt)
+	"incomplete_platform_data": {
+		"max_additional_attempts": 1,
+	},
+}
+
+# --------------------------------- Queue ---------------------------------- #
+QUEUE_SETTINGS: dict[str, dict[str, int] | int] = {
+	"priorities": {  # Lower number = higher priority
+		"high": 0,
+		"normal": 5,
+		"low": 10,
+	},
+	"warn_depth": 1000,
+	"max_in_memory": 5000,
+}
+
+# -------------------------------- Alerting -------------------------------- #
+ALERTING_SETTINGS: dict[str, float | int] = {
+	"platform_down_escalation_minutes": 120,
+	"repeat_overclaim_window_hours": 6,  # Consecutive high discrepancies escalate
+}
+
 if INTEGRATIONS_RANDOM_SEED is not None:
 	import random
 	random.seed(INTEGRATIONS_RANDOM_SEED)
 
-__all__ = ["INTEGRATIONS_RANDOM_SEED", "MOCK_FAILURE_RATE", "REDDIT_LINK_RESOLVE_TIMEOUT"]
+__all__ = [
+	"INTEGRATIONS_RANDOM_SEED",
+	"MOCK_FAILURE_RATE",
+	"REDDIT_LINK_RESOLVE_TIMEOUT",
+	# Rule groups
+	"RECONCILIATION_SETTINGS",
+	"TRUST_SCORING",
+	"CIRCUIT_BREAKER",
+	"BACKOFF_POLICY",
+	"RETRY_POLICY",
+	"QUEUE_SETTINGS",
+	"ALERTING_SETTINGS",
+]
