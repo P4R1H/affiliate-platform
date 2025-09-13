@@ -2,7 +2,14 @@ from .base import UnifiedMetrics, ResponseBase
 from .affiliates import AffiliateCreate, AffiliateRead, AffiliateUpdate, AffiliatePostSubmission
 from .campaigns import CampaignCreate, CampaignRead, CampaignUpdate
 from .posts import PostCreate, PostRead
-from .reconciliation import ReconciliationResult, ReconciliationTrigger
+from .reconciliation import (
+    ReconciliationResult,
+    ReconciliationTrigger,
+    DiscrepancyDetail,
+    TrustScoreChange,
+    AlertPayload,
+    ReconciliationJobPayload,
+)
 from .alerts import AlertRead, AlertResolve
 from .platform import PlatformAPIResponse
 
@@ -28,7 +35,11 @@ __all__ = [
     
     # Reconciliation
     "ReconciliationResult",
-    "ReconciliationTrigger",    
+    "ReconciliationTrigger",
+    "DiscrepancyDetail",
+    "TrustScoreChange",
+    "AlertPayload",
+    "ReconciliationJobPayload",
     # Alerts
     "AlertRead",
     "AlertResolve",

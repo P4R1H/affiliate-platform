@@ -27,6 +27,22 @@ from app.models.db import (
 )
 from app.models.db import platforms, campaigns, affiliates, posts, affiliate_reports, platform_reports, reconciliation_logs, alerts  # noqa: F401
 from app.models.db.enums import CampaignStatus, UserRole
+from app.jobs.queue import PriorityDelayQueue
+from app.jobs.worker_reconciliation import ReconciliationWorker
+
+@pytest.fixture(scope="session", autouse=True)
+def reconciliation_queue():
+    """Provide a queue instance on app.state for endpoints during tests.
+
+    The production app sets this up in lifespan. Tests bypass lifespan so we replicate here.
+    """
+    queue = PriorityDelayQueue()
+    app.state.reconciliation_queue = queue  # type: ignore[attr-defined]
+    # Start worker thread (daemon) for tests; simplified without shutdown join.
+    worker = ReconciliationWorker(queue)
+    worker.start()
+    yield queue
+    queue.shutdown()
 
 # Use in-memory SQLite for isolation & speed
 SQLALCHEMY_TEST_URL = "sqlite+pysqlite:///:memory:"  # shared memory per process
