@@ -35,6 +35,7 @@ from app.models.db.enums import ReconciliationStatus, TrustEvent
 from app.services.platform_fetcher import PlatformFetcher
 from app.services.discrepancy_classifier import classify
 from app.services.trust_scoring import apply_trust_event
+from app.services.alerting import maybe_create_alert
 
 from app.config import RETRY_POLICY
 from app.utils import get_logger
@@ -169,6 +170,10 @@ def run_reconciliation(session: Session, affiliate_report_id: int) -> Dict[str, 
     }
     if classification.status in terminal_statuses and retry_time is None:
         post.is_reconciled = True
+
+    # Alert creation (before commit so alert persists atomically with log changes)
+    retry_scheduled_flag = retry_time is not None
+    maybe_create_alert(session, log, affiliate=affiliate, post=post, retry_scheduled=retry_scheduled_flag)
 
     session.commit()
 
