@@ -1,0 +1,460 @@
+# Configuration Reference
+
+Complete reference for configuring the Affiliate Reconciliation Platform.
+
+## Configuration Files
+
+The platform uses multiple configuration sources in order of precedence:
+
+1. **Environment Variables** (highest priority)
+2. **`.env` file** (local development)
+3. **`app/config.py`** (application defaults)
+4. **Database configuration** (runtime platform settings)
+
+## Environment Variables
+
+### Core Application Settings
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATABASE_URL` | `sqlite:///./test.db` | Database connection string |
+| `SECRET_KEY` | (required) | Secret key for session/JWT signing |
+| `LOG_LEVEL` | `INFO` | Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL) |
+| `LOG_FILE` | `logs/app.log` | Log file path |
+| `CORS_ORIGINS` | `*` | Comma-separated list of allowed CORS origins |
+
+### Integration Settings
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `INTEGRATIONS_RANDOM_SEED` | `None` | Random seed for consistent mock data (testing) |
+| `MOCK_FAILURE_RATE` | `0.05` | Simulated failure rate for mock integrations (5%) |
+| `REDDIT_LINK_RESOLVE_TIMEOUT` | `10` | Timeout for Reddit URL resolution (seconds) |
+
+### Platform API Keys (Production)
+
+| Variable | Description |
+|----------|-------------|
+| `REDDIT_CLIENT_ID` | Reddit API client ID |
+| `REDDIT_CLIENT_SECRET` | Reddit API client secret |
+| `REDDIT_USER_AGENT` | Reddit API user agent string |
+| `INSTAGRAM_ACCESS_TOKEN` | Instagram Graph API access token |
+| `TIKTOK_ACCESS_TOKEN` | TikTok Business API access token |
+| `YOUTUBE_API_KEY` | YouTube Data API v3 key |
+| `TWITTER_BEARER_TOKEN` | X/Twitter API v2 bearer token |
+
+### Development Settings
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DEVELOPMENT_MODE` | `False` | Enable development features |
+| `DISABLE_WORKER` | `False` | Disable background reconciliation worker |
+| `ENABLE_DEBUG_ENDPOINTS` | `False` | Enable debug/admin endpoints |
+
+## Application Configuration (`app/config.py`)
+
+### Reconciliation Engine Settings
+
+```python
+RECONCILIATION_SETTINGS = {
+    # Discrepancy tolerance thresholds (percentages)
+    "base_tolerance": 5.0,           # Perfect match threshold
+    "low_threshold": 15.0,           # Low discrepancy threshold  
+    "medium_threshold": 30.0,        # Medium discrepancy threshold
+    "high_threshold": 50.0,          # High discrepancy threshold
+    "overclaim_threshold": 50.0,     # Overclaim detection threshold
+    "critical_threshold": 100.0,     # Critical overclaim threshold
+    
+    # Growth allowance (platform metrics may grow after submission)
+    "growth_per_hour": 10,           # Views/hour growth allowance
+    "growth_cap_hours": 24,          # Maximum hours to apply growth
+    
+    # Confidence scoring
+    "min_confidence_for_full_classification": 0.5  # Minimum confidence for classification
+}
+```
+
+### Trust Scoring Configuration
+
+```python
+TRUST_SCORING = {
+    # Trust score boundaries
+    "min_score": 0.0,                # Minimum possible trust score
+    "max_score": 1.0,                # Maximum possible trust score
+    "default_score": 0.5,            # Default score for new affiliates
+    
+    # Trust event deltas
+    "events": {
+        "PERFECT_MATCH": 0.01,       # Bonus for perfect match
+        "MINOR_DISCREPANCY": -0.01,  # Small penalty for minor issues
+        "MEDIUM_DISCREPANCY": -0.03, # Medium penalty
+        "HIGH_DISCREPANCY": -0.05,   # High penalty
+        "OVERCLAIM": -0.10           # Severe penalty for overclaiming
+    },
+    
+    # Trust buckets for prioritization
+    "reduced_frequency_threshold": 0.8,    # High trust threshold
+    "increased_monitoring_threshold": 0.6, # Normal threshold  
+    "manual_review_threshold": 0.3         # Low trust threshold
+}
+```
+
+### Retry Policy Configuration
+
+```python
+RETRY_POLICY = {
+    # Missing platform data retry settings
+    "missing_platform_data": {
+        "initial_delay_minutes": 30,  # First retry after 30 minutes
+        "max_attempts": 5,            # Maximum retry attempts
+        "window_hours": 24            # Give up after 24 hours
+    },
+    
+    # Partial data retry settings
+    "incomplete_platform_data": {
+        "max_additional_attempts": 1  # Allow one additional attempt
+    }
+}
+```
+
+### Queue Configuration
+
+```python
+QUEUE_SETTINGS = {
+    # Priority levels (lower number = higher priority)
+    "priorities": {
+        "high": 0,     # Urgent/suspicious submissions
+        "normal": 5,   # Standard submissions
+        "low": 10      # Backfill/retry submissions
+    },
+    
+    # Queue management
+    "warn_depth": 1000,      # Log warning when queue exceeds this size
+    "max_in_memory": 5000    # Maximum jobs in memory queue
+}
+```
+
+### Alerting Configuration
+
+```python
+ALERTING_SETTINGS = {
+    # Alert escalation timeouts
+    "platform_down_escalation_minutes": 120,  # Escalate platform issues after 2 hours
+    "repeat_overclaim_window_hours": 6         # Window for repeat offense detection
+}
+```
+
+### Data Quality Settings
+
+```python
+DATA_QUALITY_SETTINGS = {
+    # Suspicion detection thresholds
+    "max_reasonable_ctr": 0.05,      # Maximum reasonable click-through rate (5%)
+    "max_reasonable_cvr": 0.02,      # Maximum reasonable conversion rate (2%)
+    "large_claim_threshold": 30000,   # Views threshold for "large claim" flag
+    "growth_rate_threshold": 2.0     # Maximum reasonable growth rate multiplier
+}
+```
+
+### Circuit Breaker Configuration
+
+```python
+CIRCUIT_BREAKER_SETTINGS = {
+    # Failure thresholds
+    "failure_threshold": 5,          # Failures before opening circuit
+    "recovery_timeout": 60,          # Seconds before attempting recovery
+    "open_cooldown_seconds": 300,    # Cooldown period when circuit is open
+    "half_open_probe_count": 3       # Test calls when half-open
+}
+```
+
+## Database Configuration
+
+### Connection Settings
+
+**SQLite (Development):**
+```python
+DATABASE_URL = "sqlite:///./test.db"
+```
+
+**PostgreSQL (Production):**
+```python
+DATABASE_URL = "postgresql://user:password@host:port/database"
+
+# Connection pooling
+engine = create_engine(
+    DATABASE_URL,
+    pool_size=20,          # Number of connections to maintain
+    max_overflow=30,       # Additional connections when pool is full
+    pool_pre_ping=True,    # Validate connections before use
+    pool_recycle=3600      # Recycle connections after 1 hour
+)
+```
+
+### Performance Tuning
+
+**Recommended PostgreSQL settings for production:**
+
+```sql
+-- Memory settings
+shared_buffers = 256MB
+effective_cache_size = 1GB
+work_mem = 64MB
+
+-- Connection settings
+max_connections = 100
+
+-- WAL settings
+wal_buffers = 16MB
+checkpoint_completion_target = 0.7
+
+-- Query planner
+random_page_cost = 1.1
+effective_io_concurrency = 200
+```
+
+**Recommended indexes:**
+```sql
+-- Performance indexes
+CREATE INDEX idx_posts_affiliate_campaign ON posts(affiliate_id, campaign_id);
+CREATE INDEX idx_reconciliation_logs_status ON reconciliation_logs(status);
+CREATE INDEX idx_affiliate_reports_submitted_at ON affiliate_reports(submitted_at);
+CREATE INDEX idx_alerts_created_at ON alerts(created_at) WHERE status = 'OPEN';
+```
+
+## Runtime Configuration
+
+### Platform-Specific Settings
+
+Platform configurations can be updated via API and are stored in the database:
+
+```json
+{
+  "reddit": {
+    "api_base_url": "https://oauth.reddit.com",
+    "rate_limit": 60,
+    "timeout": 30,
+    "retry_attempts": 3,
+    "use_mock": true
+  },
+  "instagram": {
+    "api_base_url": "https://graph.instagram.com",
+    "api_version": "v18.0",
+    "rate_limit": 200,
+    "timeout": 30,
+    "retry_attempts": 3,
+    "use_mock": true
+  }
+}
+```
+
+### Campaign Settings
+
+Campaign-specific reconciliation rules:
+
+```json
+{
+  "campaign_id": 1,
+  "reconciliation_frequency": "immediate",
+  "custom_thresholds": {
+    "base_tolerance": 3.0,
+    "high_threshold": 25.0
+  },
+  "growth_allowance_multiplier": 1.5,
+  "priority_boost": false
+}
+```
+
+### Affiliate Settings
+
+Affiliate-specific configuration:
+
+```json
+{
+  "affiliate_id": 1,
+  "trust_score_multiplier": 1.0,
+  "custom_priority": null,
+  "monitoring_level": "standard",
+  "rate_limit_override": null
+}
+```
+
+## Configuration Examples
+
+### Development Environment
+
+**.env file:**
+```bash
+# Development settings
+DATABASE_URL=sqlite:///./dev.db
+LOG_LEVEL=DEBUG
+LOG_FILE=logs/dev.log
+DEVELOPMENT_MODE=true
+
+# Consistent mock data for testing
+INTEGRATIONS_RANDOM_SEED=12345
+MOCK_FAILURE_RATE=0.1
+
+# CORS for frontend development
+CORS_ORIGINS=http://localhost:3000,http://localhost:8080
+
+# Secret key (generate new for production)
+SECRET_KEY=dev-secret-key-change-in-production
+```
+
+### Production Environment
+
+**.env file:**
+```bash
+# Production database
+DATABASE_URL=postgresql://affiliate_user:secure_password@db:5432/affiliate_reconciliation
+
+# Production logging
+LOG_LEVEL=INFO
+LOG_FILE=/app/logs/app.log
+
+# Security
+SECRET_KEY=your-very-secure-secret-key
+CORS_ORIGINS=https://yourdomain.com,https://admin.yourdomain.com
+
+# Real platform APIs
+REDDIT_CLIENT_ID=your_reddit_client_id
+REDDIT_CLIENT_SECRET=your_reddit_client_secret
+INSTAGRAM_ACCESS_TOKEN=your_instagram_token
+YOUTUBE_API_KEY=your_youtube_api_key
+TWITTER_BEARER_TOKEN=your_twitter_token
+
+# Production settings
+MOCK_FAILURE_RATE=0.0
+REDDIT_LINK_RESOLVE_TIMEOUT=5
+```
+
+### Testing Environment
+
+**.env.test file:**
+```bash
+# Test database (in-memory)
+DATABASE_URL=sqlite:///:memory:
+
+# Test logging
+LOG_LEVEL=WARNING
+LOG_FILE=/dev/null
+
+# Deterministic test data
+INTEGRATIONS_RANDOM_SEED=42
+MOCK_FAILURE_RATE=0.0
+
+# Fast timeouts for tests
+REDDIT_LINK_RESOLVE_TIMEOUT=1
+
+# Disable background worker for tests
+DISABLE_WORKER=true
+```
+
+## Configuration Validation
+
+The platform validates configuration on startup:
+
+```python
+def validate_config():
+    """Validate critical configuration settings."""
+    
+    # Required settings
+    if not os.getenv("SECRET_KEY"):
+        raise ValueError("SECRET_KEY environment variable is required")
+    
+    # Database URL format
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url or not db_url.startswith(("sqlite://", "postgresql://")):
+        raise ValueError("Invalid DATABASE_URL format")
+    
+    # Trust scoring bounds
+    if TRUST_SCORING["min_score"] >= TRUST_SCORING["max_score"]:
+        raise ValueError("Invalid trust score boundaries")
+    
+    # Threshold ordering
+    thresholds = RECONCILIATION_SETTINGS
+    if not (thresholds["base_tolerance"] < thresholds["low_threshold"] < 
+            thresholds["medium_threshold"] < thresholds["high_threshold"]):
+        raise ValueError("Reconciliation thresholds must be in ascending order")
+```
+
+## Configuration Updates
+
+### Runtime Updates via API
+
+Some configurations can be updated at runtime:
+
+```http
+PUT /api/v1/admin/config
+Authorization: Bearer admin_token
+Content-Type: application/json
+
+{
+  "trust_scoring": {
+    "events": {
+      "OVERCLAIM": -0.15
+    }
+  },
+  "reconciliation": {
+    "base_tolerance": 3.0
+  }
+}
+```
+
+### Database Configuration Migration
+
+For production config changes:
+
+```sql
+-- Update platform configuration
+UPDATE platforms 
+SET config = jsonb_set(config, '{rate_limit}', '1000') 
+WHERE name = 'reddit';
+
+-- Update global settings
+INSERT INTO system_config (key, value, updated_at) 
+VALUES ('reconciliation.base_tolerance', '3.0', NOW())
+ON CONFLICT (key) 
+DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();
+```
+
+### Configuration Monitoring
+
+Monitor configuration changes:
+
+```python
+@app.on_event("startup")
+async def log_configuration():
+    """Log current configuration on startup."""
+    logger.info("Configuration loaded", 
+                database_url=DATABASE_URL,
+                log_level=LOG_LEVEL,
+                mock_failure_rate=MOCK_FAILURE_RATE,
+                queue_priorities=QUEUE_SETTINGS["priorities"])
+```
+
+## Security Considerations
+
+### Sensitive Data Protection
+
+- **Never commit `.env` files** containing production secrets
+- **Use environment-specific `.env` files** (`.env.prod`, `.env.staging`)
+- **Rotate secrets regularly** (API keys, database passwords)
+- **Use secrets management** (AWS Secrets Manager, HashiCorp Vault) in production
+
+### Configuration Validation
+
+- **Validate on startup** to catch misconfigurations early
+- **Use type hints** for configuration objects
+- **Document required vs optional** settings
+- **Provide sensible defaults** for development
+
+### Access Control
+
+- **Limit configuration updates** to admin users only
+- **Audit configuration changes** with timestamps and user tracking
+- **Validate configuration changes** before applying
+- **Support rollback** for configuration changes
+
+For deployment-specific configuration guidance, see [Setup Guide](SETUP_GUIDE.md).
