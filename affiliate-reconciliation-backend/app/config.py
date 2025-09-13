@@ -151,10 +151,10 @@ __all__ = [
 ]
 
 # ------------------------------- Discord Bot ------------------------------ #
-# Optional Discord bot integration. If ENABLE_DISCORD_BOT is true and a token
-# is provided, the service/discord_bot.py module can be launched separately to
-# expose slash commands as an alternative affiliate submission interface.
-ENABLE_DISCORD_BOT: bool = False
+# Optional Discord bot integration. Controlled by ENABLE_DISCORD_BOT env var.
+# Kept simple (no pydantic BaseSettings to avoid unnecessary abstraction here).
+_enable_bot = os.getenv("ENABLE_DISCORD_BOT", "false").lower()
+ENABLE_DISCORD_BOT: bool = _enable_bot in {"1", "true", "yes"}
 DISCORD_BOT_TOKEN: str | None = os.getenv("DISCORD_BOT_TOKEN") or None
 
 # Comma-separated guild IDs for faster command registration during development.
