@@ -7,6 +7,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.models.db import Affiliate, Platform, Campaign
+from app.models.db.enums import UserRole
 from app.utils import get_logger
 
 logger = get_logger(__name__)
@@ -249,4 +250,20 @@ def check_admin_access(
     
     logger.info("Admin access granted")
     return True
+
+def require_admin(current_affiliate: Affiliate = Depends(get_current_affiliate)) -> Affiliate:
+    """Role-based admin guard using authenticated affiliate.
+
+    Returns the affiliate if they have ADMIN role, else raises 403.
+    This replaces header-based admin key checks for stronger RBAC coherence.
+    """
+    if current_affiliate.role != UserRole.ADMIN:
+        logger.warning(
+            "Admin role required",
+            affiliate_id=current_affiliate.id,
+            role=current_affiliate.role
+        )
+        from fastapi import HTTPException, status
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin role required")
+    return current_affiliate
 

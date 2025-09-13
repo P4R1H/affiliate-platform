@@ -5,8 +5,9 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session, selectinload
 import time
-from app.api.deps import get_db, validate_platform_exists
+from app.api.deps import get_db, validate_platform_exists, require_admin
 from app.models.db import Campaign, Platform
+from app.models.db.enums import CampaignStatus
 from app.models.schemas.campaigns import CampaignCreate, CampaignRead, CampaignUpdate
 from app.models.schemas.base import ResponseBase
 from app.utils import get_logger, log_business_event, log_performance
@@ -24,6 +25,7 @@ logger = get_logger(__name__)
 async def create_campaign(
     campaign_data: CampaignCreate,
     request: Request,
+    admin=Depends(require_admin),
     db: Session = Depends(get_db)
 ) -> CampaignRead:
     """Create a new campaign with platform assignments."""
@@ -74,7 +76,7 @@ async def create_campaign(
             )
         
         # Create campaign
-        campaign_dict = campaign_data.dict(exclude={"platform_ids"})
+        campaign_dict = campaign_data.model_dump(exclude={"platform_ids"})
         campaign = Campaign(**campaign_dict)
         campaign.platforms = platforms
         
@@ -114,7 +116,7 @@ async def create_campaign(
             request_id=request_id
         )
         
-        return CampaignRead.from_orm(campaign)
+        return CampaignRead.model_validate(campaign)
         
     except HTTPException:
         raise
@@ -138,7 +140,7 @@ async def create_campaign(
 )
 async def list_campaigns(
     request: Request,
-    status_filter: Optional[str] = Query(None, regex="^(active|paused|ended)$"),
+    status_filter: Optional[CampaignStatus] = Query(None),
     advertiser: Optional[str] = Query(None),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
@@ -186,7 +188,7 @@ async def list_campaigns(
             request_id=request_id
         )
         
-        return [CampaignRead.from_orm(campaign) for campaign in campaigns]
+        return [CampaignRead.model_validate(campaign) for campaign in campaigns]
         
     except Exception as e:
         logger.error(

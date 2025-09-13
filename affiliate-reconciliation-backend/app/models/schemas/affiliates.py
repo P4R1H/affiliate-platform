@@ -3,7 +3,8 @@ Pydantic schemas for affiliate-related operations.
 """
 from datetime import datetime
 from typing import Optional, Dict, Any, List
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field, EmailStr, ConfigDict
+from ..db.enums import UserRole
 from ..db.affiliate_reports import SubmissionMethod 
 
 class AffiliateCreate(BaseModel):
@@ -11,14 +12,13 @@ class AffiliateCreate(BaseModel):
     email: EmailStr
     discord_user_id: Optional[str] = None
     
-    class Config:
-        schema_extra = {
-            "example": {
-                "name": "John Doe",
-                "email": "john@example.com",
-                "discord_user_id": "johndoe#1234"
-            }
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "name": "John Doe",
+            "email": "john@example.com",
+            "discord_user_id": "johndoe#1234"
         }
+    })
 
 class AffiliateRead(BaseModel):
     id: int
@@ -27,19 +27,20 @@ class AffiliateRead(BaseModel):
     discord_user_id: Optional[str]
     api_key: Optional[str]
     is_active: bool
+    role: UserRole
     trust_score: float = Field(ge=0.0, le=1.0)
     total_submissions: int
     accurate_submissions: int
     created_at: datetime
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class AffiliateUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=200)
     email: Optional[EmailStr] = None
     discord_user_id: Optional[str] = None
     is_active: Optional[bool] = None
+    role: Optional[UserRole] = None
 
 class AffiliatePostSubmission(BaseModel):
     """
@@ -63,20 +64,19 @@ class AffiliatePostSubmission(BaseModel):
     evidence_data: Optional[Dict[str, Any]] = Field(None, description="Screenshots, links, additional data")
     submission_method: SubmissionMethod = Field(description="API or DISCORD")
     
-    class Config:
-        schema_extra = {
-            "example": {
-                "campaign_id": 1,
-                "platform_id": 2,
-                "post_url": "https://reddit.com/r/example/comments/123456",
-                "title": "Amazing Product Review",
-                "claimed_views": 1500,
-                "claimed_clicks": 75,
-                "claimed_conversions": 3,
-                "evidence_data": {
-                    "screenshot_urls": ["https://imgur.com/abc123"],
-                    "additional_links": ["https://analytics.example.com/report/456"]
-                },
-                "submission_method": "API"
-            }
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "campaign_id": 1,
+            "platform_id": 2,
+            "post_url": "https://reddit.com/r/example/comments/123456",
+            "title": "Amazing Product Review",
+            "claimed_views": 1500,
+            "claimed_clicks": 75,
+            "claimed_conversions": 3,
+            "evidence_data": {
+                "screenshot_urls": ["https://imgur.com/abc123"],
+                "additional_links": ["https://analytics.example.com/report/456"]
+            },
+            "submission_method": "API"
         }
+    })

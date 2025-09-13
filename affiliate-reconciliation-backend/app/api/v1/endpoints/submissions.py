@@ -1,17 +1,18 @@
 """
 Affiliate submission endpoints with comprehensive audit logging.
-Follows REST API best practices with separate endpoints for create vs update.
+Integrates link processing and validation for URL cleaning and platform detection.
 """
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request, Query
 from sqlalchemy.orm import Session
 import time
-from app.api.deps import get_db, get_current_affiliate, validate_campaign_exists, validate_platform_exists
+from app.api.deps import get_db, get_current_affiliate
 from app.models.db import Post, AffiliateReport, Affiliate, Campaign, Platform
 from app.models.schemas.affiliates import AffiliatePostSubmission
 from app.models.schemas.posts import PostRead
 from app.models.schemas.base import ResponseBase
 from app.utils import get_logger, log_business_event, log_performance
+from app.utils.link_processing import process_post_url
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -102,11 +103,43 @@ async def submit_post(
                 detail=f"Platform '{platform.name}' is not assigned to campaign '{campaign.name}'"
             )
         
-        # Check if post already exists - should FAIL for POST
+        # CRITICAL: Process URL with full validation pipeline
+        try:
+            processed_url, detected_platform = await process_post_url(
+                submission.post_url, 
+                platform.name
+            )
+            
+            logger.info(
+                "URL processing completed successfully",
+                affiliate_id=current_affiliate.id,
+                original_url=submission.post_url,
+                processed_url=processed_url,
+                detected_platform=detected_platform,
+                expected_platform=platform.name,
+                url_changed=submission.post_url != processed_url,
+                request_id=request_id
+            )
+            
+        except ValueError as e:
+            logger.warning(
+                "Post submission failed: URL processing error",
+                affiliate_id=current_affiliate.id,
+                post_url=submission.post_url,
+                platform_name=platform.name,
+                error=str(e),
+                request_id=request_id
+            )
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"URL processing failed: {str(e)}"
+            )
+        
+        # Check if post already exists with processed URL - should FAIL for POST
         existing_post = db.query(Post).filter(
             Post.campaign_id == submission.campaign_id,
             Post.platform_id == submission.platform_id,
-            Post.url == submission.post_url,
+            Post.url == processed_url,  # Use processed URL for duplicate check
             Post.affiliate_id == current_affiliate.id
         ).first()
         
@@ -115,7 +148,7 @@ async def submit_post(
                 "Post submission failed: post already exists",
                 affiliate_id=current_affiliate.id,
                 existing_post_id=existing_post.id,
-                post_url=submission.post_url,
+                processed_url=processed_url,
                 request_id=request_id
             )
             raise HTTPException(
@@ -123,12 +156,12 @@ async def submit_post(
                 detail=f"Post already exists with id {existing_post.id}. Use PUT /submissions/{existing_post.id}/metrics to update metrics."
             )
         
-        # Create NEW post
+        # Create NEW post with processed URL
         post = Post(
             campaign_id=submission.campaign_id,
             affiliate_id=current_affiliate.id,
             platform_id=submission.platform_id,
-            url=submission.post_url,
+            url=processed_url,  # Store the clean, processed URL
             title=submission.title,
             description=submission.description
         )
@@ -162,7 +195,9 @@ async def submit_post(
                 "affiliate_report_id": affiliate_report.id,
                 "campaign_name": campaign.name,
                 "platform_name": platform.name,
-                "post_url": submission.post_url,
+                "original_url": submission.post_url,
+                "processed_url": processed_url,
+                "url_changed": submission.post_url != processed_url,
                 "claimed_metrics": {
                     "views": submission.claimed_views,
                     "clicks": submission.claimed_clicks,
@@ -192,7 +227,8 @@ async def submit_post(
             additional_data={
                 "affiliate_id": current_affiliate.id,
                 "campaign_id": campaign.id,
-                "has_evidence": bool(submission.evidence_data)
+                "has_evidence": bool(submission.evidence_data),
+                "url_processing_required": submission.post_url != processed_url
             }
         )
         
@@ -200,6 +236,7 @@ async def submit_post(
             "New post submission completed successfully",
             post_id=post.id,
             affiliate_report_id=affiliate_report.id,
+            processed_url=processed_url,
             duration_ms=duration_ms,
             request_id=request_id
         )
@@ -210,6 +247,8 @@ async def submit_post(
             data={
                 "post_id": post.id,
                 "affiliate_report_id": affiliate_report.id,
+                "processed_url": processed_url,
+                "url_was_modified": submission.post_url != processed_url,
                 "estimated_processing_time": "2-5 minutes"
             }
         )
@@ -279,10 +318,60 @@ async def update_post_metrics(
                 detail=f"Post with id {post_id} not found or you don't have permission to update it"
             )
         
+        # Process the submitted URL to ensure consistency
+        try:
+            platform = db.query(Platform).filter(
+                Platform.id == post.platform_id,
+                Platform.is_active == True
+            ).first()
+            
+            if not platform:
+                logger.error(
+                    "Post metrics update failed: platform not found",
+                    affiliate_id=current_affiliate.id,
+                    post_id=post_id,
+                    platform_id=post.platform_id,
+                    request_id=request_id
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Post references invalid platform"
+                )
+            
+            processed_url, _ = await process_post_url(submission.post_url, platform.name)
+            
+            # Validate that processed URL matches existing post
+            if processed_url != post.url:
+                logger.warning(
+                    "Post metrics update failed: URL mismatch after processing",
+                    affiliate_id=current_affiliate.id,
+                    post_id=post_id,
+                    existing_url=post.url,
+                    submitted_url=submission.post_url,
+                    processed_url=processed_url,
+                    request_id=request_id
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Submitted URL does not match existing post URL"
+                )
+        except ValueError as e:
+            logger.warning(
+                "Post metrics update failed: URL processing error",
+                affiliate_id=current_affiliate.id,
+                post_id=post_id,
+                submitted_url=submission.post_url,
+                error=str(e),
+                request_id=request_id
+            )
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"URL processing failed: {str(e)}"
+            )
+        
         # Validate the submission data matches the existing post
         if (submission.campaign_id != post.campaign_id or 
-            submission.platform_id != post.platform_id or 
-            submission.post_url != post.url):
+            submission.platform_id != post.platform_id):
             logger.warning(
                 "Post metrics update failed: data mismatch",
                 affiliate_id=current_affiliate.id,
@@ -291,7 +380,7 @@ async def update_post_metrics(
             )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Campaign ID, platform ID, and post URL must match the existing post"
+                detail="Campaign ID and platform ID must match the existing post"
             )
         
         # Update post metadata if provided
@@ -446,7 +535,7 @@ async def get_submission_history(
             request_id=request_id
         )
         
-        return [PostRead.from_orm(post) for post in posts]
+        return [PostRead.model_validate(post) for post in posts]
         
     except Exception as e:
         logger.error(

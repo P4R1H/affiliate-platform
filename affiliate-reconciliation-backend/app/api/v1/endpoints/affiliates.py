@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session
 import time
 from app.api.deps import get_db, get_current_affiliate
+from sqlalchemy.exc import IntegrityError
 from app.models.db import Affiliate
 from app.models.schemas.affiliates import AffiliateCreate, AffiliateRead, AffiliateUpdate
 from app.models.schemas.base import ResponseBase
@@ -39,44 +40,19 @@ async def create_affiliate(
     )
     
     try:
-        # Check for duplicate email
-        existing = db.query(Affiliate).filter(Affiliate.email == affiliate_data.email).first()
-        if existing:
+        existing_email = db.query(Affiliate).filter(Affiliate.email == affiliate_data.email).first()
+        if existing_email:
             logger.warning(
-                "Affiliate creation failed: duplicate email",
+                "Affiliate creation failed: duplicate email (pre-check)",
                 email=affiliate_data.email,
-                existing_affiliate_id=existing.id,
+                existing_affiliate_id=existing_email.id,
                 request_id=request_id
             )
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Affiliate with email '{affiliate_data.email}' already exists"
-            )
-        
-        # Check for duplicate name
-        existing_name = db.query(Affiliate).filter(Affiliate.name == affiliate_data.name).first()
-        if existing_name:
-            logger.warning(
-                "Affiliate creation failed: duplicate name",
-                name=affiliate_data.name,
-                existing_affiliate_id=existing_name.id,
-                request_id=request_id
-            )
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Affiliate with name '{affiliate_data.name}' already exists"
-            )
-        
-        # Generate API key
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
+
         import secrets
         api_key = f"aff_{secrets.token_urlsafe(32)}"
-        
-        # Create affiliate
-        affiliate = Affiliate(
-            **affiliate_data.dict(),
-            api_key=api_key
-        )
-        
+        affiliate = Affiliate(**affiliate_data.model_dump(), api_key=api_key)
         db.add(affiliate)
         db.commit()
         db.refresh(affiliate)
@@ -111,9 +87,22 @@ async def create_affiliate(
             request_id=request_id
         )
         
-        return AffiliateRead.from_orm(affiliate)
+        return AffiliateRead.model_validate(affiliate)
         
+    except IntegrityError as ie:
+        db.rollback()
+        # Determine which unique constraint failed (simplistic message parsing)
+        msg = str(ie.orig).lower()
+        conflict_field = "email" if "email" in msg else ("name" if "name" in msg else "unique field")
+        logger.warning(
+            "Affiliate creation integrity error",
+            conflict_field=conflict_field,
+            error=str(ie),
+            request_id=request_id
+        )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Affiliate with that {conflict_field} already exists")
     except HTTPException:
+        db.rollback()
         raise
     except Exception as e:
         logger.error(
@@ -123,10 +112,8 @@ async def create_affiliate(
             request_id=request_id,
             exc_info=True
         )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error during affiliate creation"
-        )
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error during affiliate creation")
 
 @router.get(
     "/me",
@@ -146,7 +133,7 @@ async def get_current_affiliate_profile(
         request_id=request_id
     )
     
-    return AffiliateRead.from_orm(current_affiliate)
+    return AffiliateRead.model_validate(current_affiliate)
 
 @router.put(
     "/me",
@@ -166,13 +153,12 @@ async def update_current_affiliate(
     logger.info(
         "Affiliate profile update started",
         affiliate_id=current_affiliate.id,
-        update_fields=list(update_data.dict(exclude_unset=True).keys()),
+        update_fields=list(update_data.model_dump(exclude_unset=True).keys()),
         request_id=request_id
     )
-    
+
     try:
-        # Update only provided fields
-        update_dict = update_data.dict(exclude_unset=True)
+        update_dict = update_data.model_dump(exclude_unset=True)
         
         # Check for email conflicts if email is being updated
         if "email" in update_dict:
@@ -224,7 +210,7 @@ async def update_current_affiliate(
             additional_data={"affiliate_id": current_affiliate.id}
         )
         
-        return AffiliateRead.from_orm(current_affiliate)
+        return AffiliateRead.model_validate(current_affiliate)
         
     except HTTPException:
         raise
