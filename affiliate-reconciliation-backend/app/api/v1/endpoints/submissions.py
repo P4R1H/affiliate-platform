@@ -13,6 +13,7 @@ from app.models.schemas.posts import PostRead
 from app.models.schemas.base import ResponseBase
 from app.utils import get_logger, log_business_event, log_performance, process_post_url
 from app.services.trust_scoring import bucket_for_priority
+from app.utils.priority import compute_priority
 from app.services.data_quality_validators import evaluate_submission
 from app.jobs.reconciliation_job import ReconciliationJob
 
@@ -236,18 +237,8 @@ async def submit_post(
             else:
                 trust_score = float(getattr(current_affiliate, "trust_score", 0.5) or 0.5)
                 trust_bucket = bucket_for_priority(trust_score)
-                # Map trust bucket -> base queue priority label
-                priority_map = {
-                    "critical": "high",
-                    "low_trust": "high",
-                    "normal": "normal",
-                    "high_trust": "low",
-                }
-                priority_label = priority_map.get(trust_bucket, "normal")
-                # Escalate if suspicion flags present
                 susp_flags = affiliate_report.suspicion_flags or {}
-                if susp_flags and priority_label != "high":
-                    priority_label = "high"
+                priority_label = compute_priority(trust_score, bool(susp_flags))
                 job = ReconciliationJob(affiliate_report_id=affiliate_report.id, priority=priority_label)
                 queue.enqueue(job, priority=priority_label)
                 logger.info(
@@ -496,16 +487,8 @@ async def update_post_metrics(
             else:
                 trust_score = float(getattr(current_affiliate, "trust_score", 0.5) or 0.5)
                 trust_bucket = bucket_for_priority(trust_score)
-                priority_map = {
-                    "critical": "high",
-                    "low_trust": "high",
-                    "normal": "normal",
-                    "high_trust": "low",
-                }
-                priority_label = priority_map.get(trust_bucket, "normal")
                 susp_flags = affiliate_report.suspicion_flags or {}
-                if susp_flags and priority_label != "high":
-                    priority_label = "high"
+                priority_label = compute_priority(trust_score, bool(susp_flags))
                 job = ReconciliationJob(affiliate_report_id=affiliate_report.id, priority=priority_label)
                 queue.enqueue(job, priority=priority_label)
                 logger.info(

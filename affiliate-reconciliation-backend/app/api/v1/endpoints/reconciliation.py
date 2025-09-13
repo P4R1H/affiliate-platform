@@ -11,6 +11,7 @@ from app.models.schemas.reconciliation import ReconciliationResult, Reconciliati
 from app.models.schemas.base import ResponseBase
 from app.utils import get_logger, log_business_event, log_performance
 from app.services.trust_scoring import bucket_for_priority
+from app.utils.priority import compute_priority
 from app.jobs.reconciliation_job import ReconciliationJob
 
 router = APIRouter()
@@ -52,14 +53,7 @@ async def trigger_reconciliation(
         def enqueue_for_report(report: AffiliateReport):
             trust_score = float(getattr(report.post.affiliate, "trust_score", 0.5) or 0.5)
             bucket = bucket_for_priority(trust_score)
-            priority_label = {
-                "critical": "high",
-                "low_trust": "high",
-                "normal": "normal",
-                "high_trust": "low",
-            }.get(bucket, "normal")
-            if report.suspicion_flags and priority_label != "high":
-                priority_label = "high"
+            priority_label = compute_priority(trust_score, bool(report.suspicion_flags))
             job = ReconciliationJob(affiliate_report_id=report.id, priority=priority_label)
             queue.enqueue(job, priority=priority_label)
             enqueued.append(report.id)
