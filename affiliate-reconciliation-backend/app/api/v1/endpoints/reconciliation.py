@@ -7,7 +7,13 @@ from sqlalchemy.orm import Session, selectinload
 import time
 from app.api.deps import get_db
 from app.models.db import ReconciliationLog, AffiliateReport, PlatformReport, Post
-from app.models.schemas.reconciliation import ReconciliationResult, ReconciliationTrigger
+from app.models.schemas.reconciliation import (
+    ReconciliationResult,
+    ReconciliationTrigger,
+    DiscrepancyDetail,
+    TrustScoreChange,
+    ReconciliationJobPayload,
+)
 from app.models.schemas.base import ResponseBase
 from app.utils import get_logger, log_business_event, log_performance
 from app.services.trust_scoring import bucket_for_priority
@@ -242,7 +248,7 @@ def _build_reconciliation_result(log: ReconciliationLog) -> ReconciliationResult
         conversions=log.affiliate_report.claimed_conversions,
         post_url=post.url,
         platform_name=post.platform.name if post.platform else "unknown",
-    timestamp=log.affiliate_report.submitted_at,  # type: ignore[arg-type]
+        timestamp=log.affiliate_report.submitted_at,  # type: ignore[arg-type]
         source="affiliate_claim",
     )
     platform_metrics = None
@@ -257,6 +263,49 @@ def _build_reconciliation_result(log: ReconciliationLog) -> ReconciliationResult
             timestamp=pr.fetched_at,  # type: ignore[arg-type]
             source="platform_api",
         )
+    # Build discrepancies list
+    discrepancies = [
+        DiscrepancyDetail(
+            metric="views",
+            claimed=log.affiliate_report.claimed_views,
+            observed=platform_metrics.views if platform_metrics else None,  # type: ignore[union-attr]
+            absolute_diff=log.views_discrepancy,
+            pct_diff=float(log.views_diff_pct) if log.views_diff_pct is not None else None,
+        ),
+        DiscrepancyDetail(
+            metric="clicks",
+            claimed=log.affiliate_report.claimed_clicks,
+            observed=platform_metrics.clicks if platform_metrics else None,  # type: ignore[union-attr]
+            absolute_diff=log.clicks_discrepancy,
+            pct_diff=float(log.clicks_diff_pct) if log.clicks_diff_pct is not None else None,
+        ),
+        DiscrepancyDetail(
+            metric="conversions",
+            claimed=log.affiliate_report.claimed_conversions,
+            observed=platform_metrics.conversions if platform_metrics else None,  # type: ignore[union-attr]
+            absolute_diff=log.conversions_discrepancy,
+            pct_diff=float(log.conversions_diff_pct) if log.conversions_diff_pct is not None else None,
+        ),
+    ]
+
+    # Trust score change placeholder (needs log fields if stored); for now compute from affiliate current & log.trust_delta if present
+    trust_change = None
+    if hasattr(log, "trust_delta") and log.trust_delta is not None:
+        prev = float(getattr(log, "previous_trust_score", 0.0) or 0.0)
+        new = prev + float(log.trust_delta)  # type: ignore[arg-type]
+        trust_change = TrustScoreChange(
+            event=getattr(log, "trust_event", None),
+            previous=prev,
+            new=new,
+            delta=float(log.trust_delta),  # type: ignore[arg-type]
+        )
+
+    job_payload = ReconciliationJobPayload(
+        attempt_count=getattr(log, "attempt_count", 1),
+        max_attempts=getattr(log, "max_attempts", None),
+        next_retry_at=getattr(log, "next_retry_at", None),
+        queue_priority=getattr(log, "queue_priority", None),
+    )
     return ReconciliationResult(
         id=log.id,
         affiliate_report_id=log.affiliate_report_id,
@@ -270,9 +319,15 @@ def _build_reconciliation_result(log: ReconciliationLog) -> ReconciliationResult
         clicks_diff_pct=float(log.clicks_diff_pct) if log.clicks_diff_pct is not None else None,
         conversions_diff_pct=float(log.conversions_diff_pct) if log.conversions_diff_pct is not None else None,
         notes=log.notes,
-    processed_at=log.processed_at,  # type: ignore[arg-type]
+        processed_at=log.processed_at,  # type: ignore[arg-type]
         affiliate_metrics=affiliate_metrics,
         platform_metrics=platform_metrics,
+        discrepancies=discrepancies,
+        max_discrepancy_pct=float(getattr(log, "max_discrepancy_pct", 0.0)) if getattr(log, "max_discrepancy_pct", None) is not None else None,
+        trust_change=trust_change,
+        alert=None,  # Populated later if embedding alerts becomes requirement
+        job=job_payload,
+        meta={},
     )
 
 
