@@ -142,4 +142,25 @@ __all__ = [
 	"QUEUE_SETTINGS",
 	"ALERTING_SETTINGS",
 	"DATA_QUALITY_SETTINGS",
+    # Discord / external interface
+    "DISCORD_BOT_TOKEN",
+    "DISCORD_COMMAND_GUILDS",
+    "ENABLE_DISCORD_BOT",
+    "API_BASE_URL",
 ]
+
+# ------------------------------- Discord Bot ------------------------------ #
+# Optional Discord bot integration. If ENABLE_DISCORD_BOT is true and a token
+# is provided, the service/discord_bot.py module can be launched separately to
+# expose slash commands as an alternative affiliate submission interface.
+ENABLE_DISCORD_BOT: bool = os.getenv("ENABLE_DISCORD_BOT", "false").lower() in {"1", "true", "yes"}
+DISCORD_BOT_TOKEN: str | None = os.getenv("DISCORD_BOT_TOKEN") or None
+
+# Comma-separated guild IDs for faster command registration during development.
+# Leave empty to register globally (may take up to 1 hour to propagate).
+_guilds_raw = os.getenv("DISCORD_COMMAND_GUILDS", "").strip()
+DISCORD_COMMAND_GUILDS: list[int] = [int(g.strip()) for g in _guilds_raw.split(",") if g.strip().isdigit()]
+
+# Base URL for the FastAPI service the bot will call. Default local dev address.
+API_BASE_URL: str = os.getenv("API_BASE_URL", "http://localhost:8000/api/v1")
+
