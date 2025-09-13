@@ -92,7 +92,12 @@ def run_reconciliation(session: Session, affiliate_report_id: int) -> Dict[str, 
     log = _ensure_log(session, report)
     # Compute elapsed hours since submission
     # SQLAlchemy attribute typing may not reflect runtime datetime object; cast defensively
-    submitted_at_dt = report.submitted_at if isinstance(report.submitted_at, datetime) else now
+    submitted_at_raw = report.submitted_at if isinstance(report.submitted_at, datetime) else now
+    # Normalize naive datetimes to UTC to avoid subtraction errors
+    if submitted_at_raw.tzinfo is None:  # type: ignore[union-attr]
+        submitted_at_dt = submitted_at_raw.replace(tzinfo=timezone.utc)  # type: ignore[assignment]
+    else:
+        submitted_at_dt = submitted_at_raw  # type: ignore[assignment]
     elapsed_hours = max(0.0, (now - submitted_at_dt).total_seconds() / 3600.0)
 
     fetcher = PlatformFetcher()

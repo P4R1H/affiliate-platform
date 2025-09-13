@@ -3,7 +3,7 @@ Pydantic schemas for alert management.
 """
 from datetime import datetime
 from typing import Optional, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 class AlertRead(BaseModel):
     id: int
@@ -17,9 +17,8 @@ class AlertRead(BaseModel):
     resolved_at: Optional[datetime]
     resolution_notes: Optional[str]
     created_at: datetime
-    
-    class Config:
-        from_attributes = True
+
+    model_config = ConfigDict(from_attributes=True)
 
 class AlertResolve(BaseModel):
     """

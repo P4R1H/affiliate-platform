@@ -3,7 +3,7 @@ Base schemas used across the application.
 """
 from datetime import datetime
 from typing import Optional, Any, Dict
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 class UnifiedMetrics(BaseModel):
     """
@@ -30,6 +30,5 @@ class ResponseBase(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     data: Optional[Dict[str, Any]] = None
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
