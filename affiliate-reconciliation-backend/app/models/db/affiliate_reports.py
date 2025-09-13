@@ -30,6 +30,8 @@ class AffiliateReport(Base):
     claimed_conversions: Mapped[int] = mapped_column(Integer, default=0)
 
     evidence_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Flags captured during submission validation (e.g., high_ctr, monotonicity_violation)
+    suspicion_flags: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     submission_method: Mapped[SubmissionMethod] = mapped_column(Enum(SubmissionMethod), nullable=False)
     status: Mapped[ReportStatus] = mapped_column(Enum(ReportStatus), default=ReportStatus.PENDING, index=True)
 

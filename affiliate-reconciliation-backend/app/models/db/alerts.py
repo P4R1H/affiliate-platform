@@ -9,6 +9,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from .reconciliation_logs import ReconciliationLog
 from sqlalchemy.sql import func
 from app.database import Base
+from .enums import AlertSeverity, AlertCategory
 
 class AlertStatus(str, enum.Enum):
     OPEN = "OPEN"
@@ -24,10 +25,15 @@ class Alert(Base):
     __tablename__ = "alerts"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     reconciliation_log_id: Mapped[int] = mapped_column(Integer, ForeignKey("reconciliation_logs.id"), nullable=False)
+    # Denormalised for faster querying / filtering
+    affiliate_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("affiliates.id"), nullable=True, index=True)
+    platform_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("platforms.id"), nullable=True, index=True)
     alert_type: Mapped[AlertType] = mapped_column(Enum(AlertType), nullable=False)
     title: Mapped[str] = mapped_column(String, nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
     threshold_breached: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    category: Mapped[AlertCategory] = mapped_column(Enum(AlertCategory), default=AlertCategory.DATA_QUALITY, index=True)
+    severity: Mapped[AlertSeverity] = mapped_column(Enum(AlertSeverity), default=AlertSeverity.LOW, index=True)
     status: Mapped[AlertStatus] = mapped_column(Enum(AlertStatus), default=AlertStatus.OPEN, index=True)
     resolved_by: Mapped[str | None] = mapped_column(String, nullable=True)
     resolved_at: Mapped[DateTime | None] = mapped_column(DateTime, nullable=True)
