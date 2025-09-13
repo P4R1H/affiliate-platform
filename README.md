@@ -1,14 +1,3 @@
-# Development Notes
-
-Key architectural decisions made during development:
-- **Poetry over pip**: Better dependency management and virtual environment handling
-- **Queue-based reconciliation**: Replaced cron-based batch processing with real-time job queue for faster feedback
-- **Removed image proofs**: Eliminated screenshot storage to reduce bandwidth/storage overhead and attack surface
-- **Mock-first integrations**: Prioritized core reconciliation logic over real API complexity
-- **Trust scoring**: Added affiliate reliability tracking for fraud detection
-
----
-
 # Affiliate Reconciliation Platform
 
 End-to-end system for receiving affiliate-reported performance metrics, normalizing and verifying them against platform-sourced data, and surfacing discrepancies & trust signals—optimized for extensibility and rapid iteration.
@@ -40,646 +29,118 @@ Core responsibilities:
 
 Status: A lean but production-aligned core—no speculative abstractions, only primitives required by the brief + targeted integrity & governance improvements.
 
-## Why Mock Platforms
-The brief explicitly permits mocking platform APIs. We deliberately mock Reddit/Instagram/TikTok/YouTube/X for the following reasons:
-- Cost & Rate Limits: Real APIs often require credentials, rate negotiation, or long review cycles.
-- Deterministic Testing: Mocks let us exercise edge paths (timeouts, partial data, random latency) without flakiness.
-- Extensibility Contract: Each adapter already conforms to a unified `PlatformAPIResponse` → `UnifiedMetrics` conversion. Swapping in a real client is a drop-in replacement (just implement fetch + transform).
-- Risk Isolation: Avoids external dependency drift during reconciliation correctness evolution.
+# Affiliate Reconciliation Platform
 
-We still perform a real-ish network normalization pass for Reddit URLs to prove boundary design (link canonicalization), while metrics remain simulated.
+Fast, extensible system for ingesting affiliate‑reported performance metrics, reconciling them against platform truth, surfacing discrepancies, and tracking affiliate trust.
 
-## Why We Removed Image Proofs
-Originally submissions contemplated screenshot/image evidence. We eliminated image uploads because:
-- Reconciliation Supersedes Static Proofs: Platform-fetched metrics are authoritative; screenshots become redundant & manipulable.
-- Bandwidth & Storage Overhead: Eliminated binary storage, simplifying infra & security posture.
-- Attack Surface Reduction: Less surface for exfiltration / malware payloads via image metadata.
-- Developer Velocity: Faster iteration focusing on reconciliation core instead of object storage orchestration.
+</div>
 
-Fallback Strategy: If a platform API later restricts a metric, we can re-introduce selective lightweight evidence fields (already supported via `evidence_data` JSON) without reworking persistence.
+## 1. High‑Level Overview
+This project implements an end‑to‑end reconciliation workflow:
+* Accept submissions (API today; Discord ingestion schema-ready)
+* Normalize links & identify platform context
+* Fetch or simulate platform metrics via modular adapters (mock-first, real-ready)
+* Reconcile claimed vs truth metrics, log outcomes, emit alerts, update trust scores
+* Provide typed, documented API responses for downstream analytics / dashboards
 
-## Architecture
+The implementation is intentionally lean: only primitives needed for correctness, integrity, and extensibility—no speculative abstractions.
 
+## 2. Key Enhancements vs Original Brief
+These deliberate deviations / additions are explicitly documented for reviewer transparency:
+| Area | Brief Expectation | Delivered Enhancement |
+|------|-------------------|-----------------------|
+| Reconciliation cadence | Periodic batch | Immediate + on‑demand via internal queue (faster feedback) |
+| Platform integrations | Mock allowed | Unified adapter contract enabling drop‑in real clients |
+| Evidence handling | Potential screenshot proofs | Removed image storage (attack surface + redundancy) using JSON evidence fallback |
+| Data granularity | Campaign/date implied | Post‑centric model with historical snapshots |
+| Inconsistency detection | Basic comparison | Discrepancy scaffolding + alert pipeline + trust scoring |
+| Security | Basic auth | API key + role-based admin guard (RBAC scaffold) |
+| Observability | Unspecified | Structured logging, metrics hooks, circuit breaker, backoff, priority queue |
+
+See `affiliate-reconciliation-backend/docs/ROADMAP.md` for what is planned next.
+
+## 3. Core Design Choices (Retained Summary)
+* **Mock‑first strategy** – Accelerates iteration; real APIs can replace metric generators behind existing interfaces.
+* **Post‑centric schema** – Enables precise duplicate prevention and longitudinal reconciliation.
+* **Append‑only reports + immutable logs** – Preserves audit history.
+* **Trust scoring** – Lightweight fraud & quality signal (`accurate_submissions / total_submissions`).
+* **Immediate reconciliation** – Queue-based trigger instead of cron; lowers detection latency.
+* **Enum hardening** – Reduces typo risk (roles, statuses, submission methods).
+* **Removed binary proofs** – Less storage, bandwidth, and security overhead.
+* **Circuit breaker & backoff utilities** – Resilience primitives for future real API calls.
+* **Structured JSON logging** – Correlation IDs + business context for observability.
+
+Deep dives for each topic live in the docs directory (links below).
+
+## 4. Minimal Architecture Snapshot
 ```
-Clients (Affiliates) ─┐
-              ▼
-          FastAPI HTTP Layer
-              ▼
-    ┌──────── Domain / Services ────────┐
-    │  Submissions  |  Integrations     │
-    │  Reconciliation (sync placeholder)│
-    └────────────────┬──────────────────┘
-             ▼
-         Persistence (SQLAlchemy)
-             ▼
-         Structured Logging Layer
-```
-
-Modular integration adapters expose consistent metric structures; reconciliation logic consumes affiliate + platform reports to produce logs & trust score updates.
-
-## Data Model & Integrity
-
-Highlights:
-- Post-centric granularity (one row per unique affiliate-platform-campaign URL) with uniqueness constraint.
-- Append-only affiliate report history; platform fetch snapshots stored separately.
-- Reconciliation logs capture comparison outcome (scaffold present; thresholds enforced in services layer).
-- Enforced uniqueness: affiliate email + name + per-post uniqueness composite constraint.
-- Enums introduced (`CampaignStatus`, `UserRole`) to remove fragile string literals.
-- Role column added to `Affiliate` enabling RBAC without introducing a parallel user table.
-
-## Reconciliation Lifecycle
-Current: Triggered on submission (synchronous placeholder) or via explicit endpoint.
-Roadmap (deferred): Offload to queue / worker for isolation & retry semantics.
-Stages:
-1. Affiliate submits claim.
-2. Link normalization + platform adapter call (mock returns metrics / or defers to upstream).
-3. Metrics persisted as affiliate report + (optional) platform report.
-4. Discrepancy computation logged (future: alert thresholds drive `Alert` creation).
-5. Trust score recalculated (simple accuracy ratio now; extensible for weighted rules).
-
-## Enhancements vs Brief
-| Brief Item | Delivered | Enhancement Notes |
-|------------|-----------|------------------|
-| Multi-platform integrations | Yes (mock adapters) | Uniform response contract; easy real API swap |
-| Two reporting modes | API implemented; Discord-ready schema | `submission_method` Enum persisted |
-| Reconciliation frequency | On-demand + per-submission model | Faster feedback vs batch cron |
-| Detect inconsistencies | Uniqueness + discrepancy scaffolding + alerts model | Threshold logic extendable |
-| Unified view | `UnifiedMetrics` + normalized platform schemas | Minimizes downstream branching |
-| Logging / observability | Structured logger + performance events | Business & timing metadata keyed by request |
-| Modularity/extensibility | Adapter isolation + enums + schemas | Low coupling between layers |
-| RBAC | Minimal role-based admin guard | Extensible dependency pattern |
-| Trust scoring | Implemented baseline | Supports future weighting |
-
-## Assumptions & Design Choices
-- **Mock-first** to accelerate iteration; external real clients mountable behind existing adapter signatures.
-- **Enum Hardening** reduced typo risk + simplified validation logic.
-- **No Image Storage** (see rationale above) to streamline MVP and reduce operational burden.
-- **Immediate Reconciliation** over scheduled batch for increased affiliate feedback precision.
-- **Localized Constants** for mock integrations to avoid premature global config bloat.
-- **Pydantic V2 Migration (Partial)** replaced deprecated `.dict()` / `.from_orm()` usage in core endpoints; remaining schemas can be migrated incrementally.
-
-## RBAC & Security
-- Authentication: Bearer API key issued at affiliate creation.
-- Role-based admin enforcement implemented for campaign creation (ADMIN only).
-- Future: granular scopes (platform management, reconciliation control) if needed.
-
-## API Surface (Implemented)
-Core (current working subset):
-```
-POST   /api/v1/affiliates/               # Create affiliate (returns api_key)
-GET    /api/v1/affiliates/me             # Authenticated affiliate profile
-PUT    /api/v1/affiliates/me             # Update own profile
-
-POST   /api/v1/campaigns/                # (ADMIN) Create campaign
-GET    /api/v1/campaigns/                # List campaigns (enum filter)
-
-POST   /api/v1/submissions/              # Submit post & claimed metrics
-PUT    /api/v1/submissions/{post_id}/metrics  # Update claimed metrics
-GET    /api/v1/submissions/history       # List own posts
-GET    /api/v1/submissions/{post_id}/metrics # Metrics evolution
-
-POST   /api/v1/reconciliation/run        # Trigger reconciliation (scaffold)
-GET    /api/v1/reconciliation/results    # List reconciliation logs
-
-GET    /api/v1/alerts/                   # List alerts (none if no discrepancies yet)
+Clients → FastAPI Layer → Domain Services (Submissions • Integrations • Reconciliation • Trust/Alerts)
+          ↓
+        Persistence (SQLite dev / PostgreSQL target) + Queue + Structured Logging
 ```
 
-## Running Locally
+## 5. Tech Stack
+* Python 3.11+
+* FastAPI + Pydantic (v2 style schemas)
+* SQLAlchemy ORM
+* In‑process priority job queue + worker
+* Structured logging utilities (JSON)
+* Poetry for dependency & environment management
 
-### Prerequisites
-- Python 3.11+ (3.12 recommended)
-- Poetry (for dependency management)
-
-### Quick Start
+## 6. Quick Start
 ```bash
-# Clone the repository
-git clone <repository-url>
+git clone <repo-url>
 cd affiliate-reconciliation-backend
-
-# Install dependencies
 poetry install
-
-# Run tests to verify setup
-poetry run pytest -q
-
-# Start the development server
+poetry run pytest -q      # optional verification
 poetry run uvicorn app.main:app --reload
 ```
+API Docs: http://localhost:8000/docs (Swagger) • http://localhost:8000/redoc
 
-**Access the API:**
-- API: http://localhost:8000
-- Documentation: http://localhost:8000/docs
-- Alternative docs: http://localhost:8000/redoc
-
-### Environment Configuration
-Create a `.env` file (optional - defaults work for development):
+Optional `.env` (defaults work):
 ```bash
-# Database (SQLite used by default)
 DATABASE_URL=sqlite:///./test.db
-
-# Logging
 LOG_LEVEL=INFO
 LOG_FILE=logs/app.log
-
-# Mock settings
 INTEGRATIONS_RANDOM_SEED=12345
 MOCK_FAILURE_RATE=0.05
 ```
 
-For complete setup instructions including production deployment, see [Setup Guide](affiliate-reconciliation-backend/docs/SETUP_GUIDE.md).
+## 7. Documentation Index
+| Topic | File |
+|-------|------|
+| Architecture Overview | `affiliate-reconciliation-backend/docs/ARCHITECTURE_OVERVIEW.md` |
+| Data Model & Integrity | `affiliate-reconciliation-backend/docs/DATA_MODEL.md` |
+| Reconciliation Engine | `affiliate-reconciliation-backend/docs/RECONCILIATION_ENGINE.md` |
+| Queue & Worker | `affiliate-reconciliation-backend/docs/QUEUE_AND_WORKER.md` |
+| Alerting & Trust Scoring | `affiliate-reconciliation-backend/docs/ALERTING_AND_TRUST.md` |
+| Platform Integrations | `affiliate-reconciliation-backend/docs/INTEGRATIONS.md` |
+| API Reference | `affiliate-reconciliation-backend/docs/API_REFERENCE.md` |
+| Configuration Reference | `affiliate-reconciliation-backend/docs/CONFIGURATION.md` |
+| Setup / Deployment | `affiliate-reconciliation-backend/docs/SETUP_GUIDE.md` |
+| Data Flow Examples | `affiliate-reconciliation-backend/docs/DATA_FLOW_EXAMPLES.md` |
+| Testing Strategy | `affiliate-reconciliation-backend/docs/TESTING_STRATEGY.md` |
+| Roadmap | `affiliate-reconciliation-backend/docs/ROADMAP.md` |
 
-## Extending the System
-Add a new platform:
-1. Create `app/integrations/<platform>.py` implementing fetch + unify.
-2. Add platform row via seed or factory.
-3. Wire into submission normalization if URL patterns differ.
+## 8. Current Capability Highlights
+| Capability | Status |
+|------------|--------|
+| Multi-platform mock adapters | ✅ |
+| Priority job queue + worker | ✅ |
+| Reconciliation + discrepancy logging | ✅ |
+| Trust scoring updates per reconciliation | ✅ |
+| Alert scaffolding (threshold-driven) | ✅ |
+| Circuit breaker & backoff utilities | ✅ |
+| Structured JSON logging | ✅ |
+| RBAC (admin campaign creation) | ✅ |
+| Observability extensions (metrics, webhooks) | 🚧 Planned |
 
-Add real API integration:
-1. Replace mock metric generation with HTTP client logic.
-2. Return data mapped to `PlatformAPIResponse`.
-3. Preserve schema fields to avoid downstream changes.
+## 9. Extending
+* New platform: add `app/integrations/<platform>.py` implementing fetch + unify → register.
+* Real API: swap mock generator with HTTP client, preserve output schema.
+* Advanced reconciliation: implement threshold matrix + alert escalation logic.
 
-Add richer reconciliation logic:
-1. Implement threshold matrix in `services/reconciliation.py`.
-2. Emit `Alert` rows when breach occurs.
-3. Enhance trust score weighting.
-
-## Future Opportunities
-- Background worker (Celery / RQ) for async reconciliation & retries.
-- Rate limiting + circuit breaking around real platform clients.
-- Structured OpenTelemetry traces (current logger already provides request & operation context).
-- Idempotency keys (currently duplicate prevention handled by composite uniqueness + logic).
-- Bulk campaign/affiliate admin endpoints (guarded by roles).
-- Metrics API for aggregated dashboards (currently derivable through queries).
-
-## Current Limitations & Roadmap
-
-This implementation provides a solid foundation but has several planned improvements documented in `affiliate-reconciliation-backend/docs/ROADMAP.md`. Key P1 items:
-
-### Core Correctness & Resilience ✅ IMPLEMENTED
-- **Background job queue**: Priority-based delay queue with worker threads ✅
-- **Trust scoring system**: Comprehensive affiliate reliability tracking ✅
-- **Alert mechanisms**: Multi-tier alert system with escalation ✅
-- **Circuit breaker protection**: Platform outage protection ✅
-
-### Observability & Operations 🚧 IN PROGRESS
-- **Structured JSON logging**: Comprehensive logging with correlation IDs ✅
-- **Performance metrics**: Request timing and business event tracking ✅
-- **Health checks**: Basic health endpoints ✅
-- **Prometheus metrics**: SLO monitoring (planned)
-- **Slack/webhook alerts**: Real-time operational notifications (planned)
-
-### Scalability 📋 PLANNED
-- **External durable queue**: Redis/SQS for production deployment
-- **Horizontal worker scaling**: Multiple worker processes  
-- **PostgreSQL migration**: From SQLite for production concurrency
-
-See `affiliate-reconciliation-backend/docs/ROADMAP.md` for the complete prioritized backlog with implementation details and rationale.
+## 10. Roadmap Snapshot
+See full list in `docs/ROADMAP.md`. Near-term priorities: production-grade external queue (Redis/SQS), PostgreSQL migration, Prometheus metrics, webhook/Slack alerting, richer trust weighting.
 
 ---
-- **Structured JSON logging**: Better log aggregation and correlation
-- **Slack/webhook alerts**: Real-time operational notifications
-
-### Scalability
-- **External durable queue**: Redis/SQS for production deployment
-- **Horizontal worker scaling**: Multiple worker processes
-- **PostgreSQL migration**: From SQLite for production concurrency
-
-See `affiliate-reconciliation-backend/docs/ROADMAP.md` for the complete prioritized backlog with implementation details and rationale.
-
----
-Historical design notes retained above the delimiter for context & decision traceability.
-
-## Architecture
-
-### Core Components
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Affiliates    │    │   Advertisers   │    │   Platforms     │
-│   (Submit)      │    │   (Dashboard)   │    │   (Verify)      │
-└─────────┬───────┘    └─────────┬───────┘    └─────────┬───────┘
-          │                      │                      │
-          ▼                      ▼                      ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    API Gateway                                  │
-└─────────────────────┬───────────────────────────────────────────┘
-                      │
-          ┌───────────┼───────────┐
-          ▼           ▼           ▼
-    ┌─────────┐ ┌─────────┐ ┌─────────┐
-    │ Posts   │ │Platform │ │Reconcil │
-    │Service  │ │Service  │ │Service  │
-    └─────────┘ └─────────┘ └─────────┘
-          │           │           │
-          └───────────┼───────────┘
-                      ▼
-            ┌─────────────────┐
-            │   Job Queue     │
-            │ (Reconciliation)│
-            └─────────────────┘
-                      │
-                      ▼
-            ┌─────────────────┐
-            │   Database      │
-            │ (PostgreSQL)    │
-            └─────────────────┘
-```
-
-### Technology Stack
-- **Backend**: FastAPI (Python)
-- **Database**: PostgreSQL with SQLAlchemy ORM
-- **Validation**: Pydantic schemas
-- **Job Queue**: (To be implemented - Redis + Celery)
-- **Platform Integrations**: Modular adapter pattern
-
-## Database Design
-
-### Post-Centric Architecture
-Our key architectural decision was adopting a **post-centric model** rather than campaign-level aggregation:
-
-```sql
-Campaign (1) ──── (N) Post (1) ──── (N) AffiliateReport
-                     │                        │
-                     │                        │
-                     └── (N) PlatformReport   │
-                                              │
-                                              ▼
-                                    ReconciliationLog
-```
-
-### Core Tables
-
-#### 1. **posts** - Individual Content Tracking
-```sql
-CREATE TABLE posts (
-    id SERIAL PRIMARY KEY,
-    campaign_id INTEGER REFERENCES campaigns(id),
-    affiliate_id INTEGER REFERENCES affiliates(id), 
-    platform_id INTEGER REFERENCES platforms(id),
-    url VARCHAR NOT NULL,
-    title VARCHAR,
-    description TEXT,
-    is_reconciled BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT NOW(),
-    
-    UNIQUE(campaign_id, platform_id, url, affiliate_id)
-);
-```
-
-#### 2. **affiliate_reports** - Affiliate Claims (Append-Only)
-```sql
-CREATE TABLE affiliate_reports (
-    id SERIAL PRIMARY KEY,
-    post_id INTEGER REFERENCES posts(id),
-    claimed_views INTEGER DEFAULT 0,
-    claimed_clicks INTEGER DEFAULT 0,
-    claimed_conversions INTEGER DEFAULT 0,
-    evidence_data JSONB,
-    submission_method VARCHAR, -- 'API' or 'DISCORD'
-    status VARCHAR DEFAULT 'PENDING',
-    submitted_at TIMESTAMP DEFAULT NOW()
-);
-```
-
-#### 3. **platform_reports** - Platform Truth Data
-```sql
-CREATE TABLE platform_reports (
-    id SERIAL PRIMARY KEY,
-    post_id INTEGER REFERENCES posts(id),
-    platform_id INTEGER REFERENCES platforms(id),
-    views INTEGER DEFAULT 0,
-    clicks INTEGER DEFAULT 0, 
-    conversions INTEGER DEFAULT 0,
-    spend DECIMAL(10,2) DEFAULT 0.00,
-    raw_data JSONB,
-    fetched_at TIMESTAMP DEFAULT NOW()
-);
-```
-
-#### 4. **reconciliation_logs** - Comparison Results
-```sql
-CREATE TABLE reconciliation_logs (
-    id SERIAL PRIMARY KEY,
-    affiliate_report_id INTEGER REFERENCES affiliate_reports(id),
-    platform_report_id INTEGER REFERENCES platform_reports(id),
-    status VARCHAR, -- 'MATCHED', 'DISCREPANCY', etc.
-    discrepancy_level VARCHAR, -- 'LOW', 'MEDIUM', 'HIGH'
-    views_discrepancy INTEGER,
-    clicks_discrepancy INTEGER,
-    conversions_discrepancy INTEGER,
-    views_diff_pct DECIMAL(5,2),
-    clicks_diff_pct DECIMAL(5,2),
-    conversions_diff_pct DECIMAL(5,2),
-    processed_at TIMESTAMP DEFAULT NOW()
-);
-```
-
-#### 5. **affiliates** - Partner Management with Trust Scoring
-```sql
-CREATE TABLE affiliates (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR UNIQUE,
-    email VARCHAR UNIQUE,
-    discord_user_id VARCHAR,
-    api_key VARCHAR UNIQUE,
-    trust_score DECIMAL(3,2) DEFAULT 1.00,
-    total_submissions INTEGER DEFAULT 0,
-    accurate_submissions INTEGER DEFAULT 0,
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP DEFAULT NOW()
-);
-```
-
-### Data Integrity Constraints
-- **Duplicate Prevention**: Unique constraint on `(campaign_id, platform_id, url, affiliate_id)` prevents same affiliate from submitting identical posts
-- **Referential Integrity**: All foreign keys with proper cascade rules
-- **Data Validation**: Check constraints for non-negative metrics and trust scores between 0-1
-
-## Data Flow
-
-### 1. Affiliate Submission Flow
-```
-POST /affiliates/submissions
-    │
-    ▼
-┌─────────────────┐
-│ Validate Schema │ ← AffiliatePostSubmission
-└─────────────────┘
-    │
-    ▼
-┌─────────────────┐
-│ Create Post     │ ← posts table
-└─────────────────┘
-    │
-    ▼
-┌─────────────────┐
-│Create AffReport │ ← affiliate_reports table
-└─────────────────┘
-    │
-    ▼
-┌─────────────────┐
-│ Queue Recon Job │ ← reconciliation_job(affiliate_report_id)
-└─────────────────┘
-```
-
-### 2. Reconciliation Job Flow
-```
-reconciliation_worker(affiliate_report_id)
-    │
-    ▼
-┌─────────────────┐
-│ Fetch Platform  │ ← Platform Integration Service
-│ Data for Post   │
-└─────────────────┘
-    │
-    ▼
-┌─────────────────┐
-│Create PlatReport│ ← platform_reports table  
-└─────────────────┘
-    │
-    ▼
-┌─────────────────┐
-│ Compare Metrics │ ← Business Logic
-└─────────────────┘
-    │
-    ▼
-┌─────────────────┐
-│Create ReconLog  │ ← reconciliation_logs table
-└─────────────────┘
-    │
-    ▼
-┌─────────────────┐
-│Update Trust     │ ← Update affiliate.trust_score
-│Score            │
-└─────────────────┘
-    │
-    ▼
-┌─────────────────┐
-│Generate Alerts  │ ← If discrepancy > threshold
-│(if needed)      │
-└─────────────────┘
-```
-
-### 3. Unified Dashboard Flow
-```
-GET /dashboard/campaigns/{id}
-    │
-    ▼
-┌─────────────────┐
-│ Aggregate Data  │ ← Join posts, affiliate_reports, 
-│ Across Posts    │   platform_reports, reconciliation_logs
-└─────────────────┘
-    │
-    ▼
-┌─────────────────┐
-│ Transform to    │ ← CampaignDashboard schema
-│ Unified Schema  │
-└─────────────────┘
-    │
-    ▼
-┌─────────────────┐
-│ Return JSON     │ ← Standardized response format
-└─────────────────┘
-```
-
-## Key Improvements Over Requirements
-
-### 1. **Real-Time Processing vs Batch Reconciliation**
-- **Original**: "At a configurable frequency, reconcile affiliate-reported data"
-- **Our Approach**: Job queue triggers reconciliation immediately upon affiliate submission
-- **Benefits**: 
-  - Faster feedback to affiliates
-  - Better resource utilization
-  - Simpler matching logic (1:1 post reconciliation)
-  - Easier error handling and retry logic
-
-### 2. **Post-Centric Data Model**
-- **Original**: Implied campaign or date-level aggregation
-- **Our Approach**: Individual post tracking with snapshot history
-- **Benefits**:
-  - Better duplicate detection
-  - Granular audit trails
-  - Support for tracking metric growth over time
-  - More precise reconciliation matching
-
-### 3. **Trust Scoring System**
-- **Enhancement**: Built-in affiliate reliability tracking
-- **Implementation**: Simple accuracy percentage with room for complexity
-- **Benefits**: Dispute resolution, fraud detection, partner management
-
-### 4. **Unified Metrics Schema**
-- **Enhancement**: Platform-agnostic internal data representation
-- **Implementation**: `UnifiedMetrics` Pydantic schema
-- **Benefits**: Easy integration of new platforms, consistent API responses
-
-## Assumptions & Decisions
-
-### Platform Integrations
-- **Mock vs Real APIs**: Designed for easy switching between mock and real platform APIs
-- **Rate Limiting**: Will implement backoff strategies in integration layer
-- **API Costs**: Assuming reasonable API quotas; will implement caching if needed
-
-### Reconciliation Logic
-- **A ≤ B Normal**: Affiliate claims less than platform data is expected (metrics grow over time)
-- **A >> B Suspicious**: Affiliate overclaiming flagged for review
-- **Thresholds**: 
-  - Low discrepancy: < 5% difference
-  - Medium discrepancy: 5-20% difference  
-  - High discrepancy: > 20% difference
-
-### Data Storage Decisions
-- **Evidence Storage**: JSON fields for flexibility, no separate file storage for MVP
-- **Secrets Management**: Simple JSON storage for API configs (sufficient for demo)
-- **Audit Requirements**: Append-only affiliate_reports, immutable reconciliation logs
-
-### Discord Integration
-- **No Screenshots**: Removed image storage to reduce complexity and bandwidth
-- **Structured Input**: Expecting parsed Discord data, not raw message processing
-- **Idempotency**: Will handle via submission method and evidence data matching
-
-### Trust Scoring
-- **Simple Algorithm**: `accurate_submissions / total_submissions`
-- **Update Frequency**: Recalculated after each reconciliation
-- **Storage**: Materialized for performance, recalculated as needed
-
-## API Endpoints
-
-### Campaign Management
-```
-POST   /campaigns                    # Create campaign with platform assignments
-GET    /campaigns                    # List all campaigns  
-GET    /campaigns/{id}               # Get campaign details
-PUT    /campaigns/{id}/platforms     # Update platform assignments
-```
-
-### Affiliate Operations
-```
-POST   /affiliates/submissions      # Submit post with claimed metrics
-GET    /affiliates/{id}/submissions # View submission history
-GET    /affiliates/{id}/performance # Trust score and statistics
-```
-
-### Platform Integration
-```
-POST   /platforms/{platform}/fetch  # Manual platform data fetch
-GET    /platforms/{platform}/status # Integration health check
-PUT    /platforms/{platform}/config # Update API configuration
-```
-
-### Reconciliation & Monitoring
-```
-POST   /reconciliation/run          # Manual reconciliation trigger
-GET    /reconciliation/runs/{id}    # Detailed reconciliation results
-GET    /alerts                      # Active alerts and discrepancies
-PUT    /alerts/{id}/resolve         # Resolve alert with notes
-```
-
-### Dashboard & Reporting
-```
-GET    /dashboard/campaigns/{id}    # Unified campaign metrics
-GET    /dashboard/affiliates       # Affiliate performance overview
-GET    /dashboard/discrepancies    # Problem areas requiring attention
-```
-
-## Getting Started
-
-### Prerequisites
-- Python 3.9+
-- PostgreSQL 12+
-- Redis (for job queue)
-
-### Installation
-```bash
-# Clone repository
-git clone <repository-url>
-cd affiliate-reconciliation-platform
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Set up database
-createdb affiliate_reconciliation
-alembic upgrade head
-
-# Start Redis for job queue
-redis-server
-
-# Run application
-uvicorn app.main:app --reload
-```
-
-### Environment Variables
-```bash
-DATABASE_URL=postgresql://user:pass@localhost/affiliate_reconciliation
-REDIS_URL=redis://localhost:6379
-SECRET_KEY=your-secret-key
-
-# Platform API Keys (will be moved to database config)
-REDDIT_CLIENT_ID=your-reddit-client-id
-INSTAGRAM_ACCESS_TOKEN=your-instagram-token
-META_ACCESS_TOKEN=your-meta-token
-```
-
-## Typing & ORM Conventions
-
-The codebase uses SQLAlchemy 2.0 style typed ORM and Pydantic v2:
-
-* `Mapped[...]` + `mapped_column()` for all model columns.
-* `from __future__ import annotations` in each model to defer evaluation of forward references.
-* Forward references imported only under `if TYPE_CHECKING:` to satisfy static analysis without runtime circular imports.
-* Enum columns compared by coercing to string: `current = getattr(model.status, "value", model.status)`.
-* API responses leverage `ResponseBase` which now allows an optional `data: Dict[str, Any]` payload.
-
-When adding models:
-1. Use precise Python types (e.g. `int`, `float`, `dict | None`).
-2. Prefer explicit `list[Related]` over `Sequence` for relationship collections.
-3. Keep business logic out of models—place it in service layers.
-4. Update Pydantic schemas with `from_attributes = True` for ORM serialization.
-
-
-### Sample Data Setup
-```bash
-# Create sample campaigns, platforms, and affiliates
-python scripts/seed_data.py
-
-# Submit test affiliate posts
-python scripts/create_test_submissions.py
-
-# Trigger reconciliation
-python scripts/run_reconciliation.py
-```
-
-## Development Phases ✅ COMPLETED
-
-- [x] **Phase 1**: Database design and core models ✅
-- [x] **Phase 2**: Pydantic schemas and validation ✅
-- [x] **Phase 3**: API endpoints and routing ✅
-- [x] **Phase 4**: Platform integration services ✅
-- [x] **Phase 5**: Reconciliation job queue ✅
-- [x] **Phase 6**: Trust scoring and alerting ✅
-- [x] **Phase 7**: Comprehensive logging and monitoring ✅
-
-**All major features from the brief have been implemented and tested.**
-
-## Documentation
-
-Complete documentation is available in the `affiliate-reconciliation-backend/docs/` folder:
-
-### Core Documentation
-- [API Reference](affiliate-reconciliation-backend/docs/API_REFERENCE.md) - Complete REST API documentation
-- [Setup Guide](affiliate-reconciliation-backend/docs/SETUP_GUIDE.md) - Installation and deployment instructions
-- [Configuration](affiliate-reconciliation-backend/docs/CONFIGURATION.md) - Complete configuration reference
-- [Platform Integrations](affiliate-reconciliation-backend/docs/INTEGRATIONS.md) - Guide for implementing platform adapters
-- [Data Flow Examples](affiliate-reconciliation-backend/docs/DATA_FLOW_EXAMPLES.md) - Concrete examples of system operation
-
-### System Design
-- [Architecture Overview](affiliate-reconciliation-backend/docs/ARCHITECTURE_OVERVIEW.md) - System design and components
-- [Data Model](affiliate-reconciliation-backend/docs/DATA_MODEL.md) - Database schema and relationships
-- [Reconciliation Engine](affiliate-reconciliation-backend/docs/RECONCILIATION_ENGINE.md) - Core reconciliation logic
-- [Queue & Worker](affiliate-reconciliation-backend/docs/QUEUE_AND_WORKER.md) - Background job processing
-- [Alerting & Trust](affiliate-reconciliation-backend/docs/ALERTING_AND_TRUST.md) - Trust scoring and alert systems
-
-### Operations
-- [Testing Strategy](affiliate-reconciliation-backend/docs/TESTING_STRATEGY.md) - Test approach and coverage
-- [Operations & Observability](affiliate-reconciliation-backend/docs/OPERATIONS_AND_OBSERVABILITY.md) - Monitoring and troubleshooting
-- [Roadmap](affiliate-reconciliation-backend/docs/ROADMAP.md) - Future enhancements and priorities
