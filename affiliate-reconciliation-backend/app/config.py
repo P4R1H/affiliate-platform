@@ -147,6 +147,7 @@ __all__ = [
     "DISCORD_COMMAND_GUILDS",
     "ENABLE_DISCORD_BOT",
     "API_BASE_URL",
+	"BOT_INTERNAL_TOKEN",
 ]
 
 # ------------------------------- Discord Bot ------------------------------ #
@@ -163,4 +164,9 @@ DISCORD_COMMAND_GUILDS: list[int] = [int(g.strip()) for g in _guilds_raw.split("
 
 # Base URL for the FastAPI service the bot will call. Default local dev address.
 API_BASE_URL: str = os.getenv("API_BASE_URL", "http://localhost:8000/api/v1")
+
+# Single internal token used by the Discord bot for privileged but narrowly
+# scoped submission endpoints (alternate to affiliate API keys). Keep this
+# secret secure and rotate periodically.
+BOT_INTERNAL_TOKEN: str | None = os.getenv("BOT_INTERNAL_TOKEN") or None
 

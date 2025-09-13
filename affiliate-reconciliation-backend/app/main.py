@@ -66,6 +66,16 @@ async def lifespan(app: FastAPI):
         _worker = ReconciliationWorker(_queue)
         _worker.start()
         logger.info("Reconciliation queue + worker started")
+        # Start Discord bot (non-blocking) if explicitly enabled
+        try:
+            from app.config import ENABLE_DISCORD_BOT
+            if ENABLE_DISCORD_BOT:
+                from app.services.discord_bot import start_discord_bot  # local import to avoid unnecessary dependency load
+                await start_discord_bot()
+            else:
+                logger.info("Discord bot not enabled; skipping bot startup")
+        except Exception as e:  # pragma: no cover
+            logger.error("Discord bot startup check failed", error=str(e), exc_info=True)
         logger.info("Application startup completed successfully")
         yield
     except Exception as e:  # pragma: no cover
@@ -76,6 +86,14 @@ async def lifespan(app: FastAPI):
         if _worker:
             _worker.stop()
             logger.info("Reconciliation worker stop signal sent")
+        # Shutdown discord bot if it was started
+        try:
+            from app.config import ENABLE_DISCORD_BOT
+            if ENABLE_DISCORD_BOT:
+                from app.services.discord_bot import stop_discord_bot  # local import
+                await stop_discord_bot()
+        except Exception as e:  # pragma: no cover
+            logger.error("Discord bot shutdown failed", error=str(e), exc_info=True)
         logger.info("Application shutdown completed")
 
 # FastAPI app initialization with comprehensive configuration

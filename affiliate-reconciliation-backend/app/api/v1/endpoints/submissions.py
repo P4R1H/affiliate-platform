@@ -6,7 +6,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request, Query
 from sqlalchemy.orm import Session
 import time
-from app.api.deps import get_db, get_current_affiliate
+from app.api.deps import get_db, get_submission_affiliate
 from app.models.db import Post, AffiliateReport, Affiliate, Campaign, Platform
 from app.models.schemas.affiliates import AffiliatePostSubmission
 from app.models.schemas.posts import PostRead
@@ -31,7 +31,7 @@ async def submit_post(
     submission: AffiliatePostSubmission,
     background_tasks: BackgroundTasks,
     request: Request,
-    current_affiliate: Affiliate = Depends(get_current_affiliate),
+    current_affiliate: Affiliate = Depends(get_submission_affiliate),
     db: Session = Depends(get_db)
 ) -> ResponseBase:
     """Submit a brand new post with claimed metrics."""
@@ -321,7 +321,7 @@ async def update_post_metrics(
     submission: AffiliatePostSubmission,
     background_tasks: BackgroundTasks,
     request: Request,
-    current_affiliate: Affiliate = Depends(get_current_affiliate),
+    current_affiliate: Affiliate = Depends(get_submission_affiliate),
     db: Session = Depends(get_db)
 ) -> ResponseBase:
     """Update metrics for an existing post (creates new AffiliateReport for historical tracking)."""
@@ -567,7 +567,7 @@ async def get_submission_history(
     offset: int = Query(0, ge=0),
     campaign_id: Optional[int] = Query(None),
     platform_id: Optional[int] = Query(None),
-    current_affiliate: Affiliate = Depends(get_current_affiliate),
+    current_affiliate: Affiliate = Depends(get_submission_affiliate),
     db: Session = Depends(get_db)
 ) -> List[PostRead]:
     """Get submission history for the authenticated affiliate."""
@@ -637,7 +637,7 @@ async def get_submission_history(
 async def get_post_metrics_history(
     post_id: int,
     request: Request,
-    current_affiliate: Affiliate = Depends(get_current_affiliate),
+    current_affiliate: Affiliate = Depends(get_submission_affiliate),
     db: Session = Depends(get_db)
 ) -> List[dict]:
     """Get all metrics reports for a specific post (historical tracking)."""
