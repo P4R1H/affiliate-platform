@@ -11,6 +11,7 @@ from app.models.db import Alert, ReconciliationLog, AlertStatus
 from app.models.schemas.alerts import AlertRead, AlertResolve
 from app.models.schemas.base import ResponseBase
 from app.utils import get_logger, log_business_event, log_performance
+from app.utils.observability import ensure_request_id, REQUEST_ID_HEADER
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -30,7 +31,7 @@ async def get_alerts(
 ) -> List[Dict[str, Any]]:  # order fixed: request (non-default) first
     """Get alerts with filtering and pagination."""
     start_time = time.time()
-    request_id = request.headers.get("X-Request-ID", "unknown")
+    request_id = ensure_request_id(request.headers)  # central utility
     
     logger.info(
         "Alerts list requested",
@@ -113,7 +114,7 @@ async def resolve_alert(
 ) -> ResponseBase:
     """Resolve an alert with resolution notes."""
     start_time = time.time()
-    request_id = request.headers.get("X-Request-ID", "unknown")
+    request_id = ensure_request_id(request.headers)
     
     logger.info(
         "Alert resolution started",
@@ -211,7 +212,7 @@ async def get_alert_stats(
 ) -> Dict[str, Any]:
     """Get alert statistics and summary."""
     start_time = time.time()
-    request_id = request.headers.get("X-Request-ID", "unknown")
+    request_id = ensure_request_id(request.headers)
     
     logger.info(
         "Alert statistics requested",
