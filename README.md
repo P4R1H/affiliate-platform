@@ -186,7 +186,7 @@ INTEGRATIONS_RANDOM_SEED=12345
 MOCK_FAILURE_RATE=0.05
 ```
 
-For complete setup instructions including production deployment, see [Setup Guide](docs/SETUP_GUIDE.md).
+For complete setup instructions including production deployment, see [Setup Guide](affiliate-reconciliation-backend/docs/SETUP_GUIDE.md).
 
 ## Extending the System
 Add a new platform:
@@ -214,7 +214,7 @@ Add richer reconciliation logic:
 
 ## Current Limitations & Roadmap
 
-This implementation provides a solid foundation but has several planned improvements documented in `docs/ROADMAP.md`. Key P1 items:
+This implementation provides a solid foundation but has several planned improvements documented in `affiliate-reconciliation-backend/docs/ROADMAP.md`. Key P1 items:
 
 ### Core Correctness & Resilience ✅ IMPLEMENTED
 - **Background job queue**: Priority-based delay queue with worker threads ✅
@@ -234,7 +234,7 @@ This implementation provides a solid foundation but has several planned improvem
 - **Horizontal worker scaling**: Multiple worker processes  
 - **PostgreSQL migration**: From SQLite for production concurrency
 
-See `docs/ROADMAP.md` for the complete prioritized backlog with implementation details and rationale.
+See `affiliate-reconciliation-backend/docs/ROADMAP.md` for the complete prioritized backlog with implementation details and rationale.
 
 ---
 - **Structured JSON logging**: Better log aggregation and correlation
@@ -245,7 +245,7 @@ See `docs/ROADMAP.md` for the complete prioritized backlog with implementation d
 - **Horizontal worker scaling**: Multiple worker processes
 - **PostgreSQL migration**: From SQLite for production concurrency
 
-See `docs/ROADMAP.md` for the complete prioritized backlog with implementation details and rationale.
+See `affiliate-reconciliation-backend/docs/ROADMAP.md` for the complete prioritized backlog with implementation details and rationale.
 
 ---
 Historical design notes retained above the delimiter for context & decision traceability.
