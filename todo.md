@@ -8,6 +8,7 @@ Small stuff
 7) Get hidden insights, Affiliate platform API keys
 8) docker
 9) Platforms can have different links when share button is click, how to point them to 1 post in backend?
+10) circuit breaker for external platforms
 
 Major reqs
 Platform APIs

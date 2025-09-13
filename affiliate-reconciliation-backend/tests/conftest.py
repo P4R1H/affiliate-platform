@@ -26,6 +26,7 @@ from app.models.db import (
     # Import modules that define back_populates targets to ensure mapper config
 )
 from app.models.db import platforms, campaigns, affiliates, posts, affiliate_reports, platform_reports, reconciliation_logs, alerts  # noqa: F401
+from app.models.db.enums import CampaignStatus, UserRole
 
 # Use in-memory SQLite for isolation & speed
 SQLALCHEMY_TEST_URL = "sqlite+pysqlite:///:memory:"  # shared memory per process
@@ -107,12 +108,12 @@ def campaign_factory(db_session):
         from datetime import date
         from app.models.db import Platform, Campaign
         platforms = db_session.query(Platform).filter(Platform.id.in_(platform_ids)).all()
-        c = Campaign(name=name, advertiser_name="Acme", start_date=date(2025,1,1), status="active")
-        c.platforms = platforms
-        db_session.add(c)
+        campaign = Campaign(name=name, advertiser_name="Acme", start_date=date(2025, 1, 1), status=CampaignStatus.ACTIVE)
+        campaign.platforms = platforms
+        db_session.add(campaign)
         db_session.commit()
-        db_session.refresh(c)
-        return c
+        db_session.refresh(campaign)
+        return campaign
     return _create
 
 @pytest.fixture()

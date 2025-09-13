@@ -22,7 +22,7 @@ logger = get_logger(__name__)
 )
 async def get_alerts(
     request: Request,
-    status_filter: Optional[str] = Query(None, regex="^(OPEN|RESOLVED)$"),
+    status_filter: Optional[str] = Query(None, pattern="^(OPEN|RESOLVED)$"),
     alert_type: Optional[str] = Query(None),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
