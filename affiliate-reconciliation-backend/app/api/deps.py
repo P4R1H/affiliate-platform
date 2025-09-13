@@ -2,7 +2,7 @@
 Dependencies for authentication, database sessions, and common validations.
 """
 from typing import Generator, Optional
-from fastapi import Depends, HTTPException, status, Header
+from fastapi import Depends, HTTPException, status, Header, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from app.database import SessionLocal
@@ -79,6 +79,58 @@ def get_current_affiliate(
     )
     
     return affiliate
+
+def get_submission_affiliate(
+    request: Request,
+    db: Session = Depends(get_db),
+    x_discord_user_id: str | None = Header(None, alias="X-Discord-User-ID"),
+) -> Affiliate:
+    """Hybrid auth for submission endpoints.
+
+    Allows either:
+      1. Standard affiliate Bearer API key (same as get_current_affiliate)
+      2. Bot internal token (Authorization: Bot <token>) + X-Discord-User-ID header
+         which maps to an active affiliate by discord_user_id.
+
+    This narrows bot privileges to submission actions while keeping existing
+    API key flow intact for direct affiliate API usage.
+    """
+    from app.config import BOT_INTERNAL_TOKEN
+
+    # Path 2: Bot token flow
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bot "):
+        provided = auth_header[4:].strip()
+        if not BOT_INTERNAL_TOKEN or provided != BOT_INTERNAL_TOKEN:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid bot token")
+        if not x_discord_user_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing X-Discord-User-ID header")
+        affiliate = db.query(Affiliate).filter(
+            Affiliate.discord_user_id == str(x_discord_user_id),
+            Affiliate.is_active == True
+        ).first()
+        if not affiliate:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Affiliate not found for Discord user")
+        logger.info(
+            "Bot-authenticated affiliate submission",
+            affiliate_id=affiliate.id,
+            discord_user_id=x_discord_user_id
+        )
+        return affiliate
+
+    # Path 1: Standard affiliate API key using Bearer scheme
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header[len("Bearer "):].strip()
+        # Reuse logic similar to get_current_affiliate without invoking HTTPBearer (which rejects Bot scheme)
+        affiliate = db.query(Affiliate).filter(
+            Affiliate.api_key == token,
+            Affiliate.is_active == True
+        ).first()
+        if not affiliate:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or inactive API key")
+        return affiliate
+
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials")
 
 def validate_platform_exists(platform_id: int, db: Session = Depends(get_db)) -> Platform:
     """

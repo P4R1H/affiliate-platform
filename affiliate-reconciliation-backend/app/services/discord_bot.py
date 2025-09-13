@@ -1,34 +1,33 @@
-"""Discord bot interface for affiliate submissions.
+"""Discord bot interface for affiliate submissions (Bot-token auth model).
 
 Provides slash commands that proxy to the FastAPI backend so affiliates can
 submit and update post metrics directly from Discord.
 
 Key design points:
- - Authorization: We map a Discord user (author.id) to an Affiliate record via
-   the `affiliates.discord_user_id` column. This column should store the raw
-   numeric Discord user id as a string (recommended) OR a legacy username tag.
-   We first attempt numeric id match; if not found we fallback to a case
-   insensitive match on the value in the column.
- - API Calls: Uses aiohttp to call the backend submissions endpoints:
-	 POST   /api/v1/submissions            -> create new post
-	 PUT    /api/v1/submissions/{post_id}/metrics -> update metrics
-   The backend requires Bearer API key auth, so once we resolve the affiliate
-   we obtain their api_key from DB and pass it in Authorization header.
- - Evidence: For simplicity, evidence is accepted as an optional JSON snippet
-   (string) which we attempt to parse. If parsing fails we ignore it with a
-   gentle warning to the user.
- - Error Handling: We surface concise error messages to Discord but log full
-   details locally using the platform's structured logger.
+ - Authorization: Uses a dedicated internal bot token (``BOT_INTERNAL_TOKEN``)
+	 sent as ``Authorization: Bot <token>`` plus an ``X-Discord-User-ID`` header.
+	 Backend dependency `get_submission_affiliate` validates the bot token and
+	 resolves the affiliate via `affiliates.discord_user_id`.
+ - Principle of Least Privilege: Bot never reads or uses affiliate API keys.
+ - Endpoints proxied:
+		 POST /api/v1/submissions/
+		 PUT  /api/v1/submissions/{post_id}/metrics
+ - Evidence: Optional JSON blob (fallback: wraps non-JSON text under `note`).
+ - Observability: Failures logged with structured logger; Discord user gets a
+	 concise status response.
 
 Running the bot:
-  Set the following environment variables (see .env.example):
-	ENABLE_DISCORD_BOT=true
-	DISCORD_BOT_TOKEN=your_token_here
-	API_BASE_URL=http://localhost:8000/api/v1
-	(optional) DISCORD_COMMAND_GUILDS=123456789012345678,987654321098765432
+	Normal mode: If `ENABLE_DISCORD_BOT=true` the FastAPI app lifecycle will
+	automatically invoke `start_discord_bot()` during startup (non-blocking).
+	Set these environment variables:
+		ENABLE_DISCORD_BOT=true
+		DISCORD_BOT_TOKEN=your_token_here
+		BOT_INTERNAL_TOKEN=internal_submission_secret
+		API_BASE_URL=http://localhost:8000/api/v1
+		(optional) DISCORD_COMMAND_GUILDS=123456789012345678,987654321098765432
 
-  Then execute (separate process from the FastAPI app):
-	python -m app.services.discord_bot
+	Manual standalone debug (optional):
+		python -m app.services.discord_bot
 
 Safety / Production Notes:
   - For production, constrain guild registrations to specific IDs to avoid
@@ -55,6 +54,7 @@ from app.config import (
 	DISCORD_BOT_TOKEN,
 	DISCORD_COMMAND_GUILDS,
 	API_BASE_URL,
+	BOT_INTERNAL_TOKEN,
 )
 from app.database import SessionLocal
 from app.models.db import Affiliate
@@ -65,35 +65,14 @@ logger = get_logger(__name__)
 
 # ------------------------------- Helpers ---------------------------------- #
 
-def _get_affiliate_by_discord(user: discord.abc.User | discord.Member) -> Optional[Affiliate]:
-	"""Lookup affiliate by discord user id or legacy tag.
-
-	We expect `Affiliate.discord_user_id` to store the numeric snowflake as
-	string. For backward compatibility we also attempt a case-insensitive
-	comparison against the stored value (covers old username#discrim style).
-	"""
+def _discord_affiliate_exists(user: discord.abc.User | discord.Member) -> bool:
+	"""Return True if an active affiliate with this discord user id exists."""
 	db = SessionLocal()
 	try:
-		user_id_str = str(user.id)
-		affiliate = (
-			db.query(Affiliate)
-			.filter(Affiliate.discord_user_id == user_id_str, Affiliate.is_active == True)
-			.first()
-		)
-		if affiliate:
-			return affiliate
-		# fallback legacy (case insensitive)
-		# WARNING: This is less performant; acceptable for MVP scale.
-		legacy = (
-			db.query(Affiliate)
-			.filter(Affiliate.is_active == True)
-			.filter(Affiliate.discord_user_id != None)  # type: ignore
-			.all()
-		)
-		for aff in legacy:
-			if aff.discord_user_id and aff.discord_user_id.lower() == user_id_str.lower():
-				return aff
-		return None
+		return db.query(Affiliate).filter(
+			Affiliate.discord_user_id == str(user.id),
+			Affiliate.is_active == True
+		).first() is not None
 	finally:
 		db.close()
 
@@ -101,16 +80,20 @@ def _get_affiliate_by_discord(user: discord.abc.User | discord.Member) -> Option
 async def _api_request(
 	method: str,
 	path: str,
-	api_key: Optional[str],
+	discord_user_id: str,
 	payload: Optional[dict] = None,
 ) -> tuple[bool, Any]:
 	"""Execute an HTTP request to the backend API.
 
 	Returns (success, data_or_error)."""
-	if not api_key:
-		return False, {"error": "Affiliate has no API key configured"}
 	url = f"{API_BASE_URL.rstrip('/')}{path}"
-	headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+	if not BOT_INTERNAL_TOKEN:
+		return False, {"error": "BOT_INTERNAL_TOKEN not configured"}
+	headers = {
+		"Authorization": f"Bot {BOT_INTERNAL_TOKEN}",
+		"X-Discord-User-ID": discord_user_id,
+		"Content-Type": "application/json",
+	}
 	timeout = aiohttp.ClientTimeout(total=30)
 	async with aiohttp.ClientSession(timeout=timeout) as session:
 		try:
@@ -142,6 +125,7 @@ def _parse_evidence(raw: Optional[str]) -> Optional[dict]:
 
 intents = discord.Intents.none()
 bot = commands.Bot(command_prefix="!", intents=intents)  # prefix unused; we rely on slash cmds
+_bot_started: bool = False
 
 
 async def _ensure_guild_commands():
@@ -195,8 +179,7 @@ async def submit_post_cmd(
 	evidence_json: Optional[str] = None,
 ):
 	await interaction.response.defer(thinking=True, ephemeral=True)
-	affiliate = _get_affiliate_by_discord(interaction.user)
-	if not affiliate:
+	if not _discord_affiliate_exists(interaction.user):
 		await interaction.followup.send("You are not linked to an affiliate account. Please contact support.")
 		return
 
@@ -217,7 +200,7 @@ async def submit_post_cmd(
 	if evidence:
 		payload["evidence_data"] = evidence
 
-	ok, data = await _api_request("POST", "/submissions/", affiliate.api_key, payload)
+	ok, data = await _api_request("POST", "/submissions/", str(interaction.user.id), payload)
 	if ok:
 		msg = data.get("message", "Submission accepted")
 		post_id = data.get("data", {}).get("post_id") if isinstance(data, dict) else None
@@ -254,8 +237,7 @@ async def update_post_cmd(
 	evidence_json: Optional[str] = None,
 ):
 	await interaction.response.defer(thinking=True, ephemeral=True)
-	affiliate = _get_affiliate_by_discord(interaction.user)
-	if not affiliate:
+	if not _discord_affiliate_exists(interaction.user):
 		await interaction.followup.send("You are not linked to an affiliate account. Please contact support.")
 		return
 
@@ -276,7 +258,7 @@ async def update_post_cmd(
 	if evidence:
 		payload["evidence_data"] = evidence
 
-	ok, data = await _api_request("PUT", f"/submissions/{post_id}/metrics", affiliate.api_key, payload)
+	ok, data = await _api_request("PUT", f"/submissions/{post_id}/metrics", str(interaction.user.id), payload)
 	if ok:
 		msg = data.get("message", "Update accepted")
 		await interaction.followup.send(f"✅ {msg} (post_id={post_id})")
@@ -287,21 +269,46 @@ async def update_post_cmd(
 
 # ------------------------------ Entry Point ------------------------------- #
 
-def main() -> None:  # pragma: no cover - runtime entry
+async def start_discord_bot() -> None:
+	"""Start the Discord bot asynchronously if enabled.
+
+	Safe to call multiple times; only first invocation starts the client.
+	"""
+	global _bot_started
+	if _bot_started:
+		return
 	if not ENABLE_DISCORD_BOT:
-		logger.warning("Discord bot disabled. Set ENABLE_DISCORD_BOT=true to run.")
+		logger.info("Discord bot not enabled; skipping startup")
 		return
 	if not DISCORD_BOT_TOKEN:
-		logger.error("DISCORD_BOT_TOKEN not provided. Bot cannot start.")
+		logger.error("Cannot start Discord bot: DISCORD_BOT_TOKEN missing")
 		return
 	logger.info(
-		"Starting Discord bot",
+		"Launching Discord bot",
 		guild_scope="guilds" if DISCORD_COMMAND_GUILDS else "global",
 		api_base=API_BASE_URL,
 	)
-	bot.run(DISCORD_BOT_TOKEN)  # blocking
+	_bot_started = True
+	# create background task to run the bot; discord.py provides start() for awaitable use
+	asyncio.create_task(bot.start(DISCORD_BOT_TOKEN))
+
+
+async def stop_discord_bot() -> None:
+	"""Stop the Discord bot if it was started."""
+	global _bot_started
+	if _bot_started and bot.is_closed() is False:
+		try:
+			await bot.close()
+			logger.info("Discord bot closed successfully")
+		finally:
+			_bot_started = False
 
 
 if __name__ == "__main__":  # pragma: no cover
-	main()
+	# Fallback manual run for local debugging
+	asyncio.run(start_discord_bot())
+	try:
+		asyncio.get_event_loop().run_forever()
+	except KeyboardInterrupt:  # pragma: no cover
+		asyncio.run(stop_discord_bot())
 
