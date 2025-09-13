@@ -24,6 +24,7 @@ from .enums import ReconciliationStatus  # noqa: E402
 class ReconciliationLog(Base):
     __tablename__ = "reconciliation_logs"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    # Enforce one log per affiliate_report (attempt metadata lives on single row)
     affiliate_report_id: Mapped[int] = mapped_column(Integer, ForeignKey("affiliate_reports.id"), nullable=False, unique=True)
     platform_report_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("platform_reports.id"), nullable=True)
 

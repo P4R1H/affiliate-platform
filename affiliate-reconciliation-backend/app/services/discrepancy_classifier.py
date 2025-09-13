@@ -50,7 +50,7 @@ def classify(
     If some are missing -> INCOMPLETE_PLATFORM_DATA (still compare provided ones).
     """
     missing = partial_missing[:] if partial_missing else []
-    # Early missing cases
+    # Early fully-missing case (all metrics absent)
     if platform_views is None and platform_clicks is None and platform_conversions is None:
         return ClassificationResult(
             status=ReconciliationStatus.MISSING_PLATFORM_DATA,
