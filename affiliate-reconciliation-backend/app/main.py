@@ -14,6 +14,9 @@ import os
 from contextlib import asynccontextmanager
 from app.api.v1 import api_router
 from app.utils import setup_logging, get_logger
+from app.jobs.queue import PriorityDelayQueue  # queue infra
+from app.jobs.worker_reconciliation import ReconciliationWorker
+from app.jobs.reconciliation_job import ReconciliationJob
 from app.database import engine
 from app.database import Base
 
@@ -25,6 +28,20 @@ setup_logging(
 )
 
 logger = get_logger(__name__)
+
+_queue: PriorityDelayQueue | None = None
+_worker: ReconciliationWorker | None = None
+
+
+def enqueue_reconciliation(affiliate_report_id: int, priority: str = "normal", delay_seconds: float = 0.0) -> None:
+    if _queue is None:
+        raise RuntimeError("Queue not initialized")
+    job = ReconciliationJob(affiliate_report_id=affiliate_report_id, priority=priority)
+    _queue.enqueue(job, priority=priority, delay_seconds=delay_seconds)
+    logger.info(
+        "Enqueued reconciliation job", report_id=affiliate_report_id, priority=priority, delay=delay_seconds
+    )
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -40,28 +57,22 @@ async def lifespan(app: FastAPI):
         logger.info("Creating database tables")
         Base.metadata.create_all(bind=engine)
         logger.info("Database tables created successfully")
-        
-        # Add any other startup tasks here
-        # - Initialize Redis connection
-        # - Setup job queue workers
-        # - Load configuration
-        
+        # Initialize in-memory queue + worker (MVP)
+        global _queue, _worker
+        _queue = PriorityDelayQueue()
+        _worker = ReconciliationWorker(_queue)
+        _worker.start()
+        logger.info("Reconciliation queue + worker started")
         logger.info("Application startup completed successfully")
         yield
-        
-    except Exception as e:
+    except Exception as e:  # pragma: no cover
         logger.error("Application startup failed", error=str(e), exc_info=True)
         raise
-    
     finally:
-        # Shutdown
         logger.info("Application shutdown initiated")
-        
-        # Add cleanup tasks here
-        # - Close database connections
-        # - Shutdown job queue workers
-        # - Save final state
-        
+        if _worker:
+            _worker.stop()
+            logger.info("Reconciliation worker stop signal sent")
         logger.info("Application shutdown completed")
 
 # FastAPI app initialization with comprehensive configuration
