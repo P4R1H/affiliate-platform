@@ -191,12 +191,11 @@ DATA_QUALITY_SETTINGS = {
 ### Circuit Breaker Configuration
 
 ```python
-CIRCUIT_BREAKER_SETTINGS = {
+CIRCUIT_BREAKER = {
     # Failure thresholds
-    "failure_threshold": 5,          # Failures before opening circuit
-    "recovery_timeout": 60,          # Seconds before attempting recovery
-    "open_cooldown_seconds": 300,    # Cooldown period when circuit is open
-    "half_open_probe_count": 3       # Test calls when half-open
+    "failure_threshold": 5,          # Consecutive failures before OPEN
+    "open_cooldown_seconds": 300,    # Stay OPEN for 5 minutes
+    "half_open_probe_count": 3       # Probes allowed in HALF_OPEN
 }
 ```
 
@@ -210,6 +209,39 @@ BACKOFF_POLICY = {
     "max_seconds": 60,               # Maximum delay
     "max_attempts": 3,               # Maximum retry attempts
     "jitter_pct": 0.10               # Random jitter (+/-10%)
+}
+```
+
+### Rate Limiting Configuration
+
+```python
+RATE_LIMIT_SETTINGS = {
+    # Generic request limits (all endpoints unless overridden by a category)
+    "default": {
+        "limit": 1000,               # requests
+        "window_seconds": 3600,      # 1 hour window
+    },
+    # Submissions (affiliate content submissions & metric updates)
+    "submission": {
+        "limit": 100,
+        "window_seconds": 3600,
+    },
+    # Manual reconciliation triggers (admin/client)
+    "recon_trigger": {
+        "limit": 10,
+        "window_seconds": 60,        # per minute
+    },
+    # Reconciliation query endpoints (results/logs/queue)
+    "recon_query": {
+        "limit": 100,
+        "window_seconds": 60,
+    },
+    # Optional role-based overrides (if provided; keys map to UserRole values)
+    "role_overrides": {
+        "ADMIN": 5000,               # Higher limit for admins
+        "CLIENT": 2000,              # Higher limit for clients
+        "AFFILIATE": 1000,           # Default for affiliates
+    },
 }
 ```
 
@@ -430,35 +462,14 @@ def validate_config():
     if TRUST_SCORING["min_score"] >= TRUST_SCORING["max_score"]:
         raise ValueError("Invalid trust score boundaries")
     
-    # Threshold ordering
-    thresholds = RECONCILIATION_SETTINGS
-    if not (thresholds["base_tolerance"] < thresholds["low_threshold"] < 
-            thresholds["medium_threshold"] < thresholds["high_threshold"]):
+    # Reconciliation thresholds ordering
+    tiers = RECONCILIATION_SETTINGS["discrepancy_tiers"]
+    if not (RECONCILIATION_SETTINGS["base_tolerance_pct"] < tiers["low_max"] < tiers["medium_max"]):
         raise ValueError("Reconciliation thresholds must be in ascending order")
 ```
 
+
 ## Configuration Updates
-
-### Runtime Updates via API
-
-Some configurations can be updated at runtime:
-
-```http
-PUT /api/v1/admin/config
-Authorization: Bearer admin_token
-Content-Type: application/json
-
-{
-  "trust_scoring": {
-    "events": {
-      "OVERCLAIM": -0.15
-    }
-  },
-  "reconciliation": {
-    "base_tolerance": 3.0
-  }
-}
-```
 
 ### Database Configuration Migration
 
