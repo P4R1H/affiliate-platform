@@ -35,7 +35,7 @@ async def create_campaign(
     logger.info(
         "Campaign creation started",
         campaign_name=campaign_data.name,
-        advertiser=campaign_data.advertiser_name,
+        client_id=campaign_data.client_id,
         platform_count=len(campaign_data.platform_ids),
         request_id=request_id
     )
@@ -77,6 +77,7 @@ async def create_campaign(
         
         # Create campaign
         campaign_dict = campaign_data.model_dump(exclude={"platform_ids"})
+        campaign_dict["created_by"] = admin.id  # Set the creator
         campaign = Campaign(**campaign_dict)
         campaign.platforms = platforms
         
@@ -90,10 +91,12 @@ async def create_campaign(
             details={
                 "campaign_id": campaign.id,
                 "campaign_name": campaign.name,
-                "advertiser_name": campaign.advertiser_name,
+                "client_id": campaign.client_id,
+                "created_by": campaign.created_by,
                 "platform_ids": campaign_data.platform_ids,
                 "platform_names": [p.name for p in platforms]
             },
+            user_id=admin.id,
             request_id=request_id
         )
         
@@ -141,9 +144,10 @@ async def create_campaign(
 async def list_campaigns(
     request: Request,
     status_filter: Optional[CampaignStatus] = Query(None),
-    advertiser: Optional[str] = Query(None),
+    client_id: Optional[int] = Query(None, description="Filter by client ID"),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
+    admin=Depends(require_admin),
     db: Session = Depends(get_db)
 ) -> List[CampaignRead]:
     """List campaigns with filtering and pagination."""
@@ -153,9 +157,10 @@ async def list_campaigns(
     logger.info(
         "Campaign list requested",
         status_filter=status_filter,
-        advertiser_filter=advertiser,
+        client_id_filter=client_id,
         limit=limit,
         offset=offset,
+        admin_id=admin.id,
         request_id=request_id
     )
     
@@ -165,8 +170,8 @@ async def list_campaigns(
         if status_filter:
             query = query.filter(Campaign.status == status_filter)
         
-        if advertiser:
-            query = query.filter(Campaign.advertiser_name.ilike(f"%{advertiser}%"))
+        if client_id:
+            query = query.filter(Campaign.client_id == client_id)
         
         campaigns = query.offset(offset).limit(limit).all()
         
@@ -177,7 +182,7 @@ async def list_campaigns(
             duration_ms=duration_ms,
             additional_data={
                 "campaigns_returned": len(campaigns),
-                "filters_applied": bool(status_filter or advertiser)
+                "filters_applied": bool(status_filter or client_id)
             }
         )
         

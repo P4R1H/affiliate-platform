@@ -5,7 +5,7 @@ import pytest
 
 from app.config import BOT_INTERNAL_TOKEN as ORIGINAL_BOT_TOKEN  # just to ensure import path works
 from app.models.db.affiliate_reports import SubmissionMethod
-from app.models.db import Affiliate
+from app.models.db import User
 from app.api.deps import get_submission_affiliate
 
 # We rely on existing fixtures: client, platform_factory, affiliate_factory, campaign_factory, db_session (from conftest)
@@ -23,7 +23,7 @@ def _set_bot_token(monkeypatch):
     yield
 
 
-def _discord_link_affiliate(db_session, affiliate: Affiliate, discord_user_id: str):
+def _discord_link_affiliate(db_session, affiliate: User, discord_user_id: str):
     affiliate.discord_user_id = discord_user_id
     db_session.add(affiliate)
     db_session.commit()

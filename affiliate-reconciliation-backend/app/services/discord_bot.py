@@ -57,7 +57,7 @@ from app.config import (
 	BOT_INTERNAL_TOKEN,
 )
 from app.database import SessionLocal
-from app.models.db import Affiliate
+from app.models.db import User
 from app.models.db.affiliate_reports import SubmissionMethod
 from app.utils import get_logger
 
@@ -69,9 +69,9 @@ def _discord_affiliate_exists(user: discord.abc.User | discord.Member) -> bool:
 	"""Return True if an active affiliate with this discord user id exists."""
 	db = SessionLocal()
 	try:
-		return db.query(Affiliate).filter(
-			Affiliate.discord_user_id == str(user.id),
-			Affiliate.is_active == True
+		return db.query(User).filter(
+			User.discord_user_id == str(user.id),
+			User.is_active == True
 		).first() is not None
 	finally:
 		db.close()

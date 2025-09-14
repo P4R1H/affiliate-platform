@@ -1,12 +1,12 @@
 from __future__ import annotations
-"""SQLAlchemy model for individual posts submitted by affiliates."""
+"""SQLAlchemy model for individual posts submitted by users."""
 from typing import TYPE_CHECKING
 from sqlalchemy import Integer, String, ForeignKey, DateTime, Boolean, UniqueConstraint, Column
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 
 if TYPE_CHECKING:  # pragma: no cover
     from .campaigns import Campaign
-    from .affiliates import Affiliate
+    from .users import User
     from .platforms import Platform
     from .affiliate_reports import AffiliateReport
     from .platform_reports import PlatformReport
@@ -18,7 +18,7 @@ class Post(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
 
     campaign_id: Mapped[int] = mapped_column(Integer, ForeignKey("campaigns.id"), nullable=False)
-    affiliate_id: Mapped[int] = mapped_column(Integer, ForeignKey("affiliates.id"), nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     platform_id: Mapped[int] = mapped_column(Integer, ForeignKey("platforms.id"), nullable=False)
 
     url: Mapped[str] = mapped_column(String, index=True)
@@ -29,14 +29,14 @@ class Post(Base):
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     campaign: Mapped["Campaign"] = relationship("Campaign", back_populates="posts")
-    affiliate: Mapped["Affiliate"] = relationship("Affiliate", back_populates="posts")
+    user: Mapped["User"] = relationship("User", back_populates="posts")
     platform: Mapped["Platform"] = relationship("Platform", back_populates="posts")
     affiliate_reports: Mapped[list["AffiliateReport"]] = relationship("AffiliateReport", back_populates="post")
     platform_reports: Mapped[list["PlatformReport"]] = relationship("PlatformReport", back_populates="post")
 
-    # Constraints - Prevent duplicate posts from same affiliate
+    # Constraints - Prevent duplicate posts from same user
     __table_args__ = (
-        UniqueConstraint('campaign_id', 'platform_id', 'url', 'affiliate_id', 
-                        name='unique_affiliate_post_per_campaign'),
+        UniqueConstraint('campaign_id', 'platform_id', 'url', 'user_id', 
+                        name='unique_user_post_per_campaign'),
     )
 

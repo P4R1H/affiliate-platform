@@ -1,4 +1,5 @@
-from .affiliates import Affiliate
+from .users import User
+from .clients import Client
 from .platforms import Platform, campaign_platform_association
 from .campaigns import Campaign
 from .posts import Post
@@ -8,7 +9,8 @@ from .reconciliation_logs import ReconciliationLog, DiscrepancyLevel, Reconcilia
 from .alerts import Alert, AlertStatus, AlertType
 
 __all__ = [
-    "Affiliate",
+    "User",
+    "Client",
     "Platform", 
     "campaign_platform_association",
     "Campaign",

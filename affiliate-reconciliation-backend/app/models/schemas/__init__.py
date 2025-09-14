@@ -1,6 +1,12 @@
 from .base import UnifiedMetrics, ResponseBase
-from .affiliates import AffiliateCreate, AffiliateRead, AffiliateUpdate, AffiliatePostSubmission
-from .campaigns import CampaignCreate, CampaignRead, CampaignUpdate
+from .users import (
+    UserCreate, UserRead, UserUpdate, UserPostSubmission,
+    UserCreateAffiliate, UserCreateClient,
+    # Legacy aliases
+    AffiliateCreate, AffiliateRead, AffiliateUpdate, AffiliatePostSubmission
+)
+from .clients import ClientCreate, ClientRead, ClientUpdate, ClientWithUsers, ClientWithRelations
+from .campaigns import CampaignCreate, CampaignRead, CampaignUpdate, CampaignReadWithRelations
 from .posts import PostCreate, PostRead
 from .reconciliation import (
     ReconciliationResult,
@@ -18,16 +24,30 @@ __all__ = [
     "UnifiedMetrics",
     "ResponseBase",
     
-    # Affiliates
+    # Users (including legacy affiliate aliases)
+    "UserCreate",
+    "UserRead", 
+    "UserUpdate",
+    "UserPostSubmission",
+    "UserCreateAffiliate",
+    "UserCreateClient",
     "AffiliateCreate",
     "AffiliateRead", 
     "AffiliateUpdate",
     "AffiliatePostSubmission",
     
+    # Clients
+    "ClientCreate",
+    "ClientRead",
+    "ClientUpdate", 
+    "ClientWithUsers",
+    "ClientWithRelations",
+    
     # Campaigns
     "CampaignCreate",
     "CampaignRead",
     "CampaignUpdate",
+    "CampaignReadWithRelations",
     
     # Posts
     "PostCreate",

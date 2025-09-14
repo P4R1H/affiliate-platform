@@ -26,7 +26,7 @@ class Alert(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     reconciliation_log_id: Mapped[int] = mapped_column(Integer, ForeignKey("reconciliation_logs.id"), nullable=False)
     # Denormalised for faster querying / filtering
-    affiliate_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("affiliates.id"), nullable=True, index=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     platform_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("platforms.id"), nullable=True, index=True)
     alert_type: Mapped[AlertType] = mapped_column(Enum(AlertType), nullable=False)
     title: Mapped[str] = mapped_column(String, nullable=False)

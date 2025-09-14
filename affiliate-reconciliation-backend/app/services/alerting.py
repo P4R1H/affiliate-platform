@@ -16,7 +16,7 @@ from sqlalchemy import and_
 
 from app.models.db.alerts import Alert, AlertType, AlertStatus
 from app.models.db.reconciliation_logs import ReconciliationLog, DiscrepancyLevel
-from app.models.db.affiliates import Affiliate
+from app.models.db.users import User
 from app.models.db.posts import Post
 from app.models.db.enums import (
     ReconciliationStatus,
@@ -29,13 +29,13 @@ from app.utils import get_logger
 logger = get_logger(__name__)
 
 
-def _repeat_high_discrepancy(session: Session, affiliate_id: int, platform_id: int, now: datetime) -> bool:
+def _repeat_high_discrepancy(session: Session, user_id: int, platform_id: int, now: datetime) -> bool:
     window_hours = float(ALERTING_SETTINGS.get("repeat_overclaim_window_hours", 6))
     window_start = now - timedelta(hours=window_hours)
     count = (
         session.query(Alert)
         .filter(
-            Alert.affiliate_id == affiliate_id,
+            Alert.user_id == user_id,
             Alert.platform_id == platform_id,
             Alert.alert_type == AlertType.HIGH_DISCREPANCY,
             Alert.created_at >= window_start,
@@ -49,7 +49,7 @@ def maybe_create_alert(
     session: Session,
     log: ReconciliationLog,
     *,
-    affiliate: Affiliate,
+    user: User,
     post: Post,
     retry_scheduled: bool,
 ) -> Optional[Alert]:
@@ -65,7 +65,7 @@ def maybe_create_alert(
         severity = AlertSeverity.CRITICAL if log.discrepancy_level == DiscrepancyLevel.CRITICAL else AlertSeverity.HIGH
         alert = Alert(
             reconciliation_log_id=log.id,
-            affiliate_id=affiliate.id,
+            user_id=user.id,
             platform_id=post.platform_id,
             alert_type=AlertType.HIGH_DISCREPANCY,
             title="Affiliate overclaim detected",
@@ -81,11 +81,11 @@ def maybe_create_alert(
     # Rule 2: High discrepancy (non-overclaim)
     if status == ReconciliationStatus.DISCREPANCY_HIGH:
         severity = AlertSeverity.HIGH
-        if _repeat_high_discrepancy(session, affiliate.id, post.platform_id, now):
+        if _repeat_high_discrepancy(session, user.id, post.platform_id, now):
             severity = AlertSeverity.CRITICAL
         alert = Alert(
             reconciliation_log_id=log.id,
-            affiliate_id=affiliate.id,
+            user_id=user.id,
             platform_id=post.platform_id,
             alert_type=AlertType.HIGH_DISCREPANCY,
             title="High discrepancy detected",
@@ -102,7 +102,7 @@ def maybe_create_alert(
     if status == ReconciliationStatus.MISSING_PLATFORM_DATA and not retry_scheduled:
         alert = Alert(
             reconciliation_log_id=log.id,
-            affiliate_id=affiliate.id,
+            user_id=user.id,
             platform_id=post.platform_id,
             alert_type=AlertType.MISSING_DATA,
             title="Platform data missing",
