@@ -7,7 +7,7 @@ Legend: (P1 = Core MVP / high impact, P2 = Enhanced MVP, P3 = Post-MVP / future)
 ## 1. Core MVP Functionality
 | Item | Priority | Rationale | Status | Notes |
 |------|----------|-----------|--------|-------|
-| Multi-platform integrations (Reddit, Instagram, Meta) | P1 | Brief requirement #1 | ✅ Complete | Mock implementations with realistic failure rates |
+| Multi-platform integrations (Reddit, Instagram, etc) | P1 | Brief requirement #1 | ✅ Complete | Mock implementations with realistic failure rates |
 | Discord-like affiliate reporting | P1 | Brief requirement #2a | ✅ Complete | Discord bot integration with token auth |
 | Direct API affiliate reporting | P1 | Brief requirement #2b | ✅ Complete | REST API with Pydantic validation |
 | Automated reconciliation scheduling | P1 | Brief requirement #3 | ✅ Complete | Background worker with priority queue |
