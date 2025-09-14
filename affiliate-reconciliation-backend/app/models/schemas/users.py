@@ -133,9 +133,3 @@ class UserPostSubmission(BaseModel):
             "submission_method": "API"
         }
     })
-
-# Legacy aliases for backward compatibility during transition
-AffiliateCreate = UserCreateAffiliate
-AffiliateRead = UserRead
-AffiliateUpdate = UserUpdate
-AffiliatePostSubmission = UserPostSubmission
