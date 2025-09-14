@@ -174,7 +174,6 @@ docker run -p 8000:8000 --env-file ./affiliate-reconciliation-backend/.env affil
 | Circuit breaker & backoff utilities | ✅ |
 | Structured JSON logging with correlation IDs | ✅ |
 | RBAC (admin campaign creation, role-based access) | ✅ |
-| Observability extensions (metrics, webhooks) | 🚧 Planned |
 
 ## 9. Extending
 * New platform: add `app/integrations/<platform>.py` implementing fetch + unify → register.
