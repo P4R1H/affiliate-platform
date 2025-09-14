@@ -13,6 +13,7 @@ End-to-end system for receiving affiliate-reported performance metrics, normaliz
 - [8. Current Capability Highlights](#8-current-capability-highlights)
 - [9. Extending](#9-extending)
 - [10. Roadmap Snapshot](#10-roadmap-snapshot)
+- [11. Areas of Improvement](#11-areas-of-improvement)
 
 ## System Overview
 
@@ -118,6 +119,7 @@ MOCK_FAILURE_RATE=0.05
 |------------|--------|
 | Multi-platform mock adapters (Instagram, Reddit, TikTok, X, YouTube) | ✅ |
 | Priority job queue + worker threads | ✅ |
+| Redis-backed queue with in-memory fallback | ✅ |
 | Reconciliation engine + discrepancy detection | ✅ |
 | Trust scoring updates per reconciliation | ✅ |
 | Alert scaffolding (threshold-driven notifications) | ✅ |
@@ -132,6 +134,33 @@ MOCK_FAILURE_RATE=0.05
 * Advanced reconciliation: implement threshold matrix + alert escalation logic.
 
 ## 10. Roadmap Snapshot
-See full list in `docs/ROADMAP.md`. Near-term priorities: production-grade external queue (Redis/SQS), PostgreSQL migration, Prometheus metrics, webhook/Slack alerting, richer trust weighting.
+See full list in `docs/ROADMAP.md`. Near-term priorities: PostgreSQL migration, Prometheus metrics, webhook/Slack alerting, richer trust weighting.
+
+## 11. Areas of Improvement
+
+### 1. Enhanced Logging Infrastructure
+**Replace current logging with MongoDB-backed solution**
+- Store structured logs in MongoDB for better querying and analytics
+- Enable complex log aggregations and historical analysis
+- Support for log retention policies and archival
+- Real-time log monitoring and alerting capabilities
+
+### 2. Affiliate API Key Integration
+**Request platform API keys from affiliates for enhanced data access**
+- Allow affiliates to provide their own API keys for supported platforms
+- Access detailed private insights not available through public APIs
+- Fetch granular performance metrics (impressions, engagement rates, demographics)
+- Enable real-time data synchronization instead of periodic polling
+- Implement secure key storage with encryption and access controls
+
+### 3. Stale Data Detection & Alerts
+**Monitor and alert on posts with outdated metrics**
+- Track last update timestamps for all posts
+- Implement configurable thresholds for "stale" data detection
+- Generate alerts when posts haven't been updated within expected windows
+- Consider platform-specific update frequencies (e.g., Reddit vs Instagram)
+- Prevent reconciliation of potentially outdated platform data
 
 ---
+
+
