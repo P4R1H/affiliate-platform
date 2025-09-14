@@ -510,14 +510,11 @@ GET /api/v1/reconciliation/queue
   "data": {
     "snapshot": {
       "depth": 5,
-      "jobs": [
-        {
-          "id": "job_123",
-          "affiliate_report_id": 1,
-          "priority": "high",
-          "created_at": "2024-01-15T10:30:00Z"
-        }
-      ]
+      "ready": 3,
+      "scheduled": 2,
+      "shutdown": false,
+      "redis_active": true,
+      "redis_url": "redis://localhost:6379/0"
     },
     "request_id": "req_abc123"
   }

@@ -39,7 +39,7 @@ Legend: (P1 = Core MVP / high impact, P2 = Enhanced MVP, P3 = Post-MVP / future)
 ## 4. Scalability & Future Enhancements
 | Item | Priority | Rationale | Status | Notes |
 |------|----------|-----------|--------|-------|
-| External durable queue (Redis/SQS) | P3 | Survive restarts in production | 📋 Planned | Replace in-memory queue for production |
+| External durable queue (Redis/SQS) | P3 | Survive restarts in production | ✅ Complete | Redis-backed queue with in-memory fallback |
 | Horizontal worker scaling | P3 | Higher throughput needs | 📋 Planned | Multiple worker processes |
 | PostgreSQL migration | P3 | Better concurrency for scale | 📋 Planned | From SQLite for production use |
 | Additional platform adapters | P3 | Market expansion | 📋 Planned | LinkedIn, TikTok, YouTube, etc. |

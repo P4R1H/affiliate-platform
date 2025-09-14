@@ -30,6 +30,37 @@ Sequence number (`seq`) provides FIFO ordering within same priority & timestamp.
 
 Threading: Uses `threading.RLock()` for reentrant locking and `threading.Condition()` for efficient waiting/notification. The condition variable enables blocking dequeue to wait for new items or scheduled items becoming ready without busy polling.
 
+## 2.1 Queue Initialization & Fallback Mechanism
+
+The system automatically selects the appropriate queue implementation based on configuration and availability:
+
+1. **Configuration Check**: If `QUEUE_SETTINGS.use_redis` is `true`, attempt Redis queue
+2. **Dependency Check**: Verify Redis Python package is installed
+3. **Connection Test**: Attempt to connect to Redis server and perform health check
+4. **Fallback**: If any step fails, use in-memory queue as fallback
+
+### Redis Queue Fallback Behavior
+- **Initialization**: Redis queue creates an in-memory fallback queue instance
+- **Runtime Health Checks**: Before each operation, Redis connectivity is verified
+- **Automatic Switching**: If Redis becomes unavailable during operation, seamlessly switches to in-memory queue
+- **Recovery**: When Redis connection is restored, switches back to Redis-backed operations
+- **Data Consistency**: Jobs enqueued during Redis downtime are stored in memory and processed normally
+
+### create_queue() Function Logic
+```python
+def create_queue():
+    if QUEUE_SETTINGS.use_redis:
+        if redis_package_available:
+            redis_queue = RedisQueue()
+            if redis_queue.health_check():
+                return redis_queue  # Use Redis
+            else:
+                logger.warning("Redis unavailable, using in-memory")
+        else:
+            logger.warning("Redis package not installed, using in-memory")
+    return PriorityDelayQueue()  # Fallback
+```
+
 ## 3. Enqueue Path
 1. Compute `ready_at = now + delay_seconds`.
 2. Assign sequence id.
@@ -45,9 +76,10 @@ Validation includes:
 
 ## 4. Dequeue Path
 ### Redis Queue:
-1. Promote all scheduled items in Redis sorted set whose `ready_at <= now` into ready list.
-2. Use blocking pop (BLPOP) from ready list.
-3. If blocking times out, check Redis health and fall back to in-memory queue if needed.
+1. Perform Redis health check; fall back to in-memory queue if unavailable
+2. Promote all scheduled items in Redis sorted set whose `ready_at <= now` into ready list.
+3. Use blocking pop (BLPOP) from ready list.
+4. If blocking times out, check Redis health and fall back to in-memory queue if needed.
 
 ### In-Memory Queue:
 1. Promote all scheduled items whose `ready_at <= now` into ready heap.
@@ -133,7 +165,7 @@ This enables test assertions on failure patterns without external logging depend
 | Silent exception consumed | Stuck pending logs | Logging (ensure error-level) | Dead-letter queue / metrics |
 | Unbounded queue growth | Memory pressure | Capacity guard | Backpressure signal to API (429) |
 | Starvation by future high priority item | Delayed normal jobs | Two-queue design | n/a |
-| Redis connection lost | Potential job loss | In-memory fallback queue | n/a |
+| Redis connection lost | Jobs in memory only; no data loss | Automatic fallback to in-memory queue | Seamless operation continues |
 
 ## 14. Scaling Path
 | Stage | Change |
@@ -216,5 +248,7 @@ To use the Redis-backed queue (recommended for production), you need:
 6. **Fallback Mechanism**
    - In-memory queue automatically used if Redis is unavailable
    - Check logs for Redis connection status
+   - Jobs enqueued during Redis downtime are safely stored in memory
+   - Automatic recovery when Redis connection is restored
 
 ---

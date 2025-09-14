@@ -142,7 +142,14 @@ QUEUE_SETTINGS = {
     
     # Queue management
     "warn_depth": 1000,      # Log warning when queue exceeds this size
-    "max_in_memory": 5000    # Maximum jobs in memory queue
+    "max_in_memory": 5000,   # Maximum jobs in memory queue
+    
+    # Redis queue configuration
+    "use_redis": False,                    # Enable Redis-backed queue (falls back to in-memory if unavailable)
+    "redis_url": "redis://localhost:6379/0", # Redis connection URL
+    "redis_ready_key": "affiliate:ready_queue",      # Redis key for ready jobs
+    "redis_scheduled_key": "affiliate:scheduled_jobs", # Redis key for scheduled jobs
+    "redis_health_check_timeout": 2.0      # Timeout for Redis health checks (seconds)
 }
 ```
 
