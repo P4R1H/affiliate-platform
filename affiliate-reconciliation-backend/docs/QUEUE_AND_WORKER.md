@@ -28,9 +28,9 @@ Redis Sorted Set: affiliate:scheduled_jobs - scores=ready_at_ts, members=seriali
 
 Sequence number (`seq`) provides FIFO ordering within same priority & timestamp.
 
-Threading: Uses `threading.RLock()` for reentrant locking and `threading.Condition()` for efficient waiting/notification. The condition variable enables blocking dequeue to wait for new items or scheduled items becoming ready without busy polling.
+Threading: Uses `threading.RLock()` for reentrant locking. For in-memory queue, `threading.Condition()` enables efficient waiting/notification for scheduled jobs. For Redis queue, blocking `BLPOP` with timeout handles waiting.
 
-## 2.1 Queue Initialization & Fallback Mechanism
+## 3. Queue Initialization & Fallback Mechanism
 
 The system automatically selects the appropriate queue implementation based on configuration and availability:
 
@@ -61,7 +61,7 @@ def create_queue():
     return PriorityDelayQueue()  # Fallback
 ```
 
-## 3. Enqueue Path
+## 4. Enqueue Path
 1. Compute `ready_at = now + delay_seconds`.
 2. Assign sequence id.
 3. If Redis is active:
@@ -74,7 +74,7 @@ Validation includes:
 - Capacity check vs `QUEUE_SETTINGS.max_in_memory`.
 - Shutdown guard.
 
-## 4. Dequeue Path
+## 5. Dequeue Path
 ### Redis Queue:
 1. Perform Redis health check; fall back to in-memory queue if unavailable
 2. Promote all scheduled items in Redis sorted set whose `ready_at <= now` into ready list.
@@ -87,7 +87,7 @@ Validation includes:
 3. If empty and blocking, compute wait time until next scheduled item (or indefinite wait) and condition wait.
 4. Exit returning `None` only on timeout or after shutdown + empty.
 
-## 5. Priority Semantics
+## 6. Priority Semantics
 Lower numeric value = higher priority. Example mapping (configure in `QUEUE_SETTINGS.priorities`):
 | Label | Value | Meaning |
 |-------|-------|---------|
@@ -97,7 +97,7 @@ Lower numeric value = higher priority. Example mapping (configure in `QUEUE_SETT
 
 Current system enqueues all submissions as `normal`; future suspicion scoring can upgrade priority (e.g., extreme CTR) before enqueue.
 
-## 6. Delay / Scheduling Use Cases
+## 7. Delay / Scheduling Use Cases
 | Use Case | Delay Source |
 |----------|--------------|
 | Retry missing data | `scheduled_retry_at` (future external scheduler re-enqueue) |
@@ -106,7 +106,7 @@ Current system enqueues all submissions as `normal`; future suspicion scoring ca
 
 Presently, the queue itself does not auto-reschedule retries; a scheduler (TBD) would read `scheduled_retry_at`, compute delay, and enqueue accordingly.
 
-## 7. Worker Thread Model
+## 8. Worker Thread Model
 | Aspect | Details |
 |--------|---------|
 | Threading | Single daemon thread with configurable poll timeout (default 5.0s) |
@@ -115,7 +115,7 @@ Presently, the queue itself does not auto-reschedule retries; a scheduler (TBD) 
 | Shutdown | Graceful shutdown via stop event; worker exits when queue empty |
 | Session Management | Fresh SQLAlchemy session per job with proper cleanup in finally block |
 
-## 8. Circuit Breaker Interaction
+## 9. Circuit Breaker Interaction
 Worker invokes reconciliation → `PlatformFetcher` consults `GLOBAL_CIRCUIT_BREAKER` → may preempt network fetch. Breaker is process-local (no cross-instance coordination in MVP). States:
 | State | Behavior |
 |-------|---------|
@@ -125,16 +125,16 @@ Worker invokes reconciliation → `PlatformFetcher` consults `GLOBAL_CIRCUIT_BRE
 
 Failures (including rate limit) increment, success resets.
 
-## 9. Queue Item Structure
+## 10. Queue Item Structure
 `QueueItem(job, priority_label, priority_value, enqueued_at, ready_at, seq)` wraps `ReconciliationJob(affiliate_report_id, priority, scheduled_at, correlation_id)`.
 - `job` holds reconciliation payload with affiliate report ID and optional correlation tracking
 - `correlation_id` enables request tracing across queue operations
 - Extensible to structured command pattern if expansion needed
 
-## 10. Test Utilities
+## 11. Test Utilities
 `purge()` clears both queues (added for test isolation). Not used in production runtime.
 
-## 11. Queue Inspection
+## 12. Queue Inspection
 `queue.snapshot()` returns thread-safe statistics:
 ```python
 {
@@ -147,7 +147,7 @@ Failures (including rate limit) increment, success resets.
 ```
 Useful for monitoring queue health and debugging backlogs.
 
-## 12. Worker Exception Tracking
+## 13. Worker Exception Tracking
 For test visibility, worker exceptions are captured in `LAST_EXCEPTIONS` list:
 ```python
 {
@@ -158,7 +158,7 @@ For test visibility, worker exceptions are captured in `LAST_EXCEPTIONS` list:
 ```
 This enables test assertions on failure patterns without external logging dependencies.
 
-## 13. Failure Modes
+## 14. Failure Modes
 | Failure | Impact | Mitigation | Backlog |
 |---------|--------|------------|---------|
 | Worker crash mid-reconciliation | Lost attempt & potential trust shift not applied | Single process reduces concurrency risks | Add idempotent attempt table / resume mechanism |
@@ -167,7 +167,7 @@ This enables test assertions on failure patterns without external logging depend
 | Starvation by future high priority item | Delayed normal jobs | Two-queue design | n/a |
 | Redis connection lost | Jobs in memory only; no data loss | Automatic fallback to in-memory queue | Seamless operation continues |
 
-## 14. Scaling Path
+## 15. Scaling Path
 | Stage | Change |
 |-------|--------|
 | Multi-thread | Add worker pool (ensure DB session per thread) |
@@ -175,7 +175,7 @@ This enables test assertions on failure patterns without external logging depend
 | Distributed breaker | External store (Redis) for breaker shared state |
 | Dynamic priority | Inline risk scoring at enqueue time |
 
-## 15. Instrumentation Roadmap
+## 16. Instrumentation Roadmap
 | Metric | Insight |
 |--------|---------|
 | queue_depth | Backlog pressure |
@@ -185,11 +185,11 @@ This enables test assertions on failure patterns without external logging depend
 | breaker_state_gauge{platform} | Integration stability |
 | redis_health | Redis connectivity status |
 
-## 16. Security & Abuse Considerations
+## 17. Security & Abuse Considerations
 - Flood of submissions could saturate queue: implement rate limiting per affiliate (future).
 - Malicious adapter code injection risk mitigated by controlled adapter modules (no dynamic remote loads).
 
-## 17. Example Timeline (Normal Flow)
+## 18. Example Timeline (Normal Flow)
 ```
 T+00ms enqueue report #101 (priority=normal)
 T+02ms worker dequeues #101
@@ -197,7 +197,7 @@ T+120ms reconciliation complete (MATCHED)
 T+121ms queue empty → blocking wait
 ```
 
-## 18. Example Timeline (Delayed Retry)
+## 19. Example Timeline (Delayed Retry)
 ```
 Attempt 1 missing -> scheduled_retry_at = now + 30m (NOT auto-enqueued yet)
 External scheduler (future) enqueues job with delay_seconds=remaining
@@ -205,7 +205,7 @@ Queue places job in scheduled_heap/sorted set; promotes at ready_at
 Worker processes attempt 2
 ```
 
-## 19. Configuration Reference
+## 20. Configuration Reference
 | Key | Usage |
 |-----|-------|
 | QUEUE_SETTINGS.priorities | Mapping label→int priority |
@@ -217,7 +217,7 @@ Worker processes attempt 2
 | QUEUE_SETTINGS.redis_scheduled_key | Redis key for scheduled jobs sorted set |
 | QUEUE_SETTINGS.redis_health_check_timeout | Timeout for Redis health checks |
 
-## 20. Redis Deployment Requirements
+## 21. Redis Deployment Requirements
 To use the Redis-backed queue (recommended for production), you need:
 
 1. **Redis Server**
