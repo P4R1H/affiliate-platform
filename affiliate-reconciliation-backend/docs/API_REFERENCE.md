@@ -13,7 +13,7 @@ All API endpoints require authentication via Bearer token:
 Authorization: Bearer {api_key}
 ```
 
-API keys are generated when creating a user account and can be retrieved via the `/users/me` endpoint.
+API keys are generated when creating a user account and returned in the response.
 
 ### Role-Based Access Control (RBAC)
 The platform implements role-based access control with the following user roles:
@@ -57,45 +57,7 @@ POST /api/v1/users/
     "created_at": "2024-01-15T10:30:00Z"
   }
 }
-```
 
-### Get Current User Profile
-```http
-GET /api/v1/users/me
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "id": 1,
-    "name": "John Smith",
-    "email": "john@example.com",
-    "trust_score": 0.85,
-    "total_submissions": 42,
-    "accurate_submissions": 38,
-    "accuracy_rate": 0.90,
-    "role": "AFFILIATE",
-    "is_active": true,
-    "created_at": "2024-01-15T10:30:00Z",
-    "last_trust_update": "2024-01-20T15:45:00Z"
-  }
-}
-```
-
-### Update User Profile
-```http
-PUT /api/v1/users/me
-```
-
-**Request Body:**
-```json
-{
-  "name": "John Smith Jr.",
-  "discord_user_id": "newuser456"
-}
-```
 
 ## Campaigns
 
@@ -312,7 +274,7 @@ GET /api/v1/submissions/history
 }
 ```
 
-### Get Post Metrics Details
+### Get Post Metrics History
 ```http
 GET /api/v1/submissions/{post_id}/metrics
 ```
@@ -321,47 +283,49 @@ GET /api/v1/submissions/{post_id}/metrics
 ```json
 {
   "success": true,
-  "data": {
-    "post_id": 1,
-    "affiliate_metrics": {
-      "claimed_views": 18000,
-      "claimed_clicks": 520,
-      "claimed_conversions": 28,
-      "submission_method": "API",
-      "submitted_at": "2024-01-15T10:30:00Z"
-    },
-    "platform_metrics": {
-      "observed_views": 17850,
-      "observed_clicks": 495,
-      "observed_conversions": 26,
-      "fetched_at": "2024-01-15T10:35:00Z",
-      "growth_adjustment_applied": true
-    },
-    "reconciliation": {
-      "status": "DISCREPANCY_LOW",
-      "discrepancy_level": "LOW",
-      "max_discrepancy_pct": 5.2,
-      "confidence_ratio": 1.0,
-      "attempt_count": 1,
-      "last_attempt_at": "2024-01-15T10:35:00Z"
-    },
-    "discrepancies": [
-      {
-        "metric": "views",
-        "claimed": 18000,
-        "observed": 17850,
-        "absolute_diff": 150,
-        "pct_diff": 0.84
+  "data": [
+    {
+      "post_id": 1,
+      "affiliate_metrics": {
+        "claimed_views": 18000,
+        "claimed_clicks": 520,
+        "claimed_conversions": 28,
+        "submission_method": "API",
+        "submitted_at": "2024-01-15T10:30:00Z"
       },
-      {
-        "metric": "clicks", 
-        "claimed": 520,
-        "observed": 495,
-        "absolute_diff": 25,
-        "pct_diff": 5.05
-      }
-    ]
-  }
+      "platform_metrics": {
+        "observed_views": 17850,
+        "observed_clicks": 495,
+        "observed_conversions": 26,
+        "fetched_at": "2024-01-15T10:35:00Z",
+        "growth_adjustment_applied": true
+      },
+      "reconciliation": {
+        "status": "DISCREPANCY_LOW",
+        "discrepancy_level": "LOW",
+        "max_discrepancy_pct": 5.2,
+        "confidence_ratio": 1.0,
+        "attempt_count": 1,
+        "last_attempt_at": "2024-01-15T10:35:00Z"
+      },
+      "discrepancies": [
+        {
+          "metric": "views",
+          "claimed": 18000,
+          "observed": 17850,
+          "absolute_diff": 150,
+          "pct_diff": 0.84
+        },
+        {
+          "metric": "clicks", 
+          "claimed": 520,
+          "observed": 495,
+          "absolute_diff": 25,
+          "pct_diff": 5.05
+        }
+      ]
+    }
+  ]
 }
 ```
 
@@ -877,71 +841,6 @@ The platform will support webhooks for real-time notifications:
 - High discrepancy detected  
 - Alert created
 - Trust score threshold crossed
-
-## SDK Examples
-
-### Python SDK Usage
-```python
-from affiliate_platform import Client
-
-# Initialize client with API key (works for all user roles)
-client = Client(api_key="your_api_key")
-
-# Submit new post (AFFILIATE role)
-post = client.submissions.create(
-    campaign_id=1,
-    platform_id=1,
-    url="https://reddit.com/r/tech/posts/abc123",
-    claimed_views=5000,
-    claimed_clicks=150,
-    claimed_conversions=8
-)
-
-# Check reconciliation status (ADMIN/CLIENT roles only)
-status = client.reconciliation.get_status(post.id)
-print(f"Status: {status.reconciliation_status}")
-
-# Trigger reconciliation (ADMIN/CLIENT roles only)
-client.reconciliation.trigger(post_id=post.id, force_reprocess=True)
-```
-
-### JavaScript SDK Usage
-```javascript
-import { AffiliateClient } from '@affiliate-platform/sdk';
-
-const client = new AffiliateClient({
-  apiKey: 'your_api_key',
-  baseURL: 'https://api.affiliate-platform.com/v1'
-});
-
-// Submit new post (AFFILIATE role)
-const post = await client.submissions.create({
-  campaignId: 1,
-  platformId: 1,
-  url: 'https://reddit.com/r/tech/posts/abc123',
-  claimedViews: 5000,
-  claimedClicks: 150,
-  claimedConversions: 8
-});
-
-// Get submission history (AFFILIATE role)
-const history = await client.submissions.getHistory({
-  limit: 20,
-  status: 'MATCHED'
-});
-
-// Trigger reconciliation (ADMIN/CLIENT roles only)
-await client.reconciliation.trigger({
-  postId: post.id,
-  forceReprocess: true
-});
-
-// Get reconciliation results (ADMIN/CLIENT roles only)
-const results = await client.reconciliation.getResults({
-  limit: 50,
-  status: 'DISCREPANCY_HIGH'
-});
-```
 
 ---
 
