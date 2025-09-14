@@ -246,7 +246,6 @@ async def process_post_url(url: str, expected_platform: str) -> tuple[str, str]:
 **Supported Platforms for Detection**:
 - Reddit (`reddit.com`, `redd.it`, `old.reddit.com`)
 - Instagram (`instagram.com`, `instagr.am`)
-- Meta/Facebook (`facebook.com`, `fb.com`)
 - TikTok (`tiktok.com`, `vm.tiktok.com`)
 - YouTube (`youtube.com`, `youtu.be`)
 - X/Twitter (`twitter.com`, `x.com`, `t.co`)

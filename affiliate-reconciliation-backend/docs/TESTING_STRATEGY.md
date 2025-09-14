@@ -58,7 +58,7 @@ Autouse fixture (`_isolate_test_state`) in `conftest.py` performs:
 ## 6. Coverage of Core Requirements
 | Requirement | Test Coverage | Files |
 |------------|----------------|-------|
-| Multi-platform integrations | Mock adapters for Reddit, Instagram, Meta | `test_full_system.py`, `test_integration_reconciliation.py` |
+| Multi-platform integrations | Mock adapters for Reddit, Instagram | `test_full_system.py`, `test_integration_reconciliation.py` |
 | Discord affiliate reporting | Bot token authentication | `test_bot_token_auth.py` |
 | Direct API affiliate reporting | API key authentication, submission validation | `test_rbac_and_uniqueness.py`, `test_edge_cases.py` |
 | Automated reconciliation | Queue + worker processing | `test_full_system.py` |
