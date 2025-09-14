@@ -1,0 +1,26 @@
+# Exclude local/dev artifacts from Docker build context
+.git
+.gitignore
+**/__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite
+*.sqlite3
+.env
+.env.*
+.mypy_cache
+.pytest_cache
+htmlcov
+.coverage*
+logs/*
+!logs/.gitkeep
+.tests_cache
+.idea
+.vscode
+benchmarks
+**/test_output
+**/fixtures
+**/logs
+# Keep tests so we can run pytest inside the container; rely on layer caching.

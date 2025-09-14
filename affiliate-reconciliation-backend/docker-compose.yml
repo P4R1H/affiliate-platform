@@ -1,0 +1,75 @@
+services:
+  app:
+    build:
+      context: .
+      args:
+        INSTALL_DEV: "true"
+    container_name: affiliate-platform-app
+    env_file:
+      - .env
+    environment:
+      # Fall back values if not present in .env
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///./test.db}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_FILE=${LOG_FILE:-logs/app.log}
+      - QUEUE_SETTINGS_USE_REDIS=${QUEUE_SETTINGS_USE_REDIS:-false}
+      - QUEUE_SETTINGS_REDIS_URL=${QUEUE_SETTINGS_REDIS_URL:-redis://redis:6379/0}
+      - QUEUE_SETTINGS_REDIS_HEALTH_CHECK_TIMEOUT=${QUEUE_SETTINGS_REDIS_HEALTH_CHECK_TIMEOUT:-2.0}
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+      - db
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      args:
+        INSTALL_DEV: "false"
+    container_name: affiliate-platform-worker
+    command: ["python", "-m", "app.jobs.worker_reconciliation"]
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///./test.db}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_FILE=${LOG_FILE:-logs/worker.log}
+      - QUEUE_SETTINGS_USE_REDIS=${QUEUE_SETTINGS_USE_REDIS:-false}
+      - QUEUE_SETTINGS_REDIS_URL=${QUEUE_SETTINGS_REDIS_URL:-redis://redis:6379/0}
+      - QUEUE_SETTINGS_REDIS_HEALTH_CHECK_TIMEOUT=${QUEUE_SETTINGS_REDIS_HEALTH_CHECK_TIMEOUT:-2.0}
+    depends_on:
+      - redis
+      - db
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+
+  redis:
+    image: redis:6
+    container_name: affiliate-platform-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+
+  db:
+    image: postgres:15
+    container_name: affiliate-platform-postgres
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-affiliate_reconciliation}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-data:

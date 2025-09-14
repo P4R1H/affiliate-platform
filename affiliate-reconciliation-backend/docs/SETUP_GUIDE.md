@@ -9,7 +9,7 @@ Complete guide for setting up and running the Affiliate Reconciliation Platform 
 - Poetry (for dependency management)
 - Git
 
-### Fast Setup (Development)
+### Fast Setup (Development - Native)
 ```bash
 # Clone the repository
 git clone <repository-url>
@@ -30,7 +30,7 @@ The API will be available at: http://localhost:8000
 - Alternative docs: http://localhost:8000/redoc
 - Health check: http://localhost:8000/health
 
-### Test the API
+### Test the API (Native)
 ```bash
 # Health check
 curl http://localhost:8000/health
@@ -39,7 +39,7 @@ curl http://localhost:8000/health
 open http://localhost:8000/docs
 ```
 
-### Optional: Discord Bot Setup
+### Optional: Discord Bot Setup (Native)
 ```bash
 # Set Discord bot token (optional)
 echo "DISCORD_BOT_TOKEN=your_bot_token_here" >> .env
@@ -48,7 +48,79 @@ echo "ENABLE_DISCORD_BOT=true" >> .env
 # Bot will be available for affiliate reporting via Discord
 ```
 
-## Detailed Installation
+## Docker-Based Setup (Recommended for Consistent Environments)
+
+The repository now ships with a production-lean Dockerfile and a convenience `docker-compose.yml` for local development.
+
+### One-Command Stack Startup
+```bash
+cd affiliate-reconciliation-backend
+docker compose up -d --build
+```
+
+Services started:
+* `app` – FastAPI backend on http://localhost:8000
+* `worker` – Background reconciliation worker
+* `redis` – Job queue backend (AOF persistence enabled)
+* `db` – PostgreSQL 15 (data persisted in named volume)
+
+Default DB credentials (override via `.env`): `postgres:postgres` and database `affiliate_reconciliation`.
+
+### Environment Variables
+Create `.env` (or copy from example) to override defaults:
+```bash
+DATABASE_URL=postgresql://postgres:postgres@db/affiliate_reconciliation
+QUEUE_SETTINGS_USE_REDIS=true
+QUEUE_SETTINGS_REDIS_URL=redis://redis:6379/0
+LOG_LEVEL=INFO
+```
+
+### Common Commands
+```bash
+# View container status
+docker compose ps
+
+# Tail API logs
+docker compose logs -f app
+
+# Tail worker logs
+docker compose logs -f worker
+
+# Run tests inside the app container
+docker compose run --rm app pytest -q
+
+# Exec into running container shell
+docker compose exec app bash
+
+# Stop stack (preserve volumes)
+docker compose down
+
+# Stop and remove volumes (DESTROYS Postgres + Redis data)
+docker compose down -v
+```
+
+### Windows Notes
+* Use PowerShell: `cp .env.example .env` (or `copy` in cmd).
+* Ensure Docker Desktop has enough resources (at least 2 CPUs / 2GB RAM).
+* If port 5432 or 6379 already used, edit `docker-compose.yml` to change host port mapping.
+
+### Building the Image Only
+```bash
+docker build -t affiliate-platform:latest ./affiliate-reconciliation-backend
+docker run -p 8000:8000 --env-file ./affiliate-reconciliation-backend/.env affiliate-platform:latest
+```
+
+### Cleanup
+```bash
+# Remove dangling images
+docker image prune
+# Remove stopped containers and unused networks/volumes
+docker system prune -f
+```
+
+Proceed to native details below if you are not using Docker.
+
+## Detailed Installation (Native)
 
 ### System Requirements
 
