@@ -4,7 +4,7 @@ Small stuff
 3) Get hidden insights, Affiliate platform API keys
 4) Docker
 5) Redis
-6) Admin & Advertiser auth
+6) Documentation
 
 Major reqs
 Data cleaning 

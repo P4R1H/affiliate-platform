@@ -2,8 +2,6 @@ from .base import UnifiedMetrics, ResponseBase
 from .users import (
     UserCreate, UserRead, UserUpdate, UserPostSubmission,
     UserCreateAffiliate, UserCreateClient,
-    # Legacy aliases
-    AffiliateCreate, AffiliateRead, AffiliateUpdate, AffiliatePostSubmission
 )
 from .clients import ClientCreate, ClientRead, ClientUpdate, ClientWithUsers, ClientWithRelations
 from .campaigns import CampaignCreate, CampaignRead, CampaignUpdate, CampaignReadWithRelations
@@ -31,10 +29,6 @@ __all__ = [
     "UserPostSubmission",
     "UserCreateAffiliate",
     "UserCreateClient",
-    "AffiliateCreate",
-    "AffiliateRead", 
-    "AffiliateUpdate",
-    "AffiliatePostSubmission",
     
     # Clients
     "ClientCreate",

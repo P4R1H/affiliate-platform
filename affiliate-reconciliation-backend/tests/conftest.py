@@ -22,10 +22,9 @@ Important: SQLAlchemy relationship configuration requires all model modules to b
 before Base.metadata.create_all(), otherwise back_populates targets might not exist yet.
 """
 from app.models.db import (
-    Platform, Campaign, User, Post, AffiliateReport, ReconciliationLog, Alert,
+    Platform, Campaign, User, Post, ReconciliationLog, Alert,
     # Import modules that define back_populates targets to ensure mapper config
 )
-from app.models.db import platforms, campaigns, users, posts, affiliate_reports, platform_reports, reconciliation_logs, alerts  # noqa: F401
 from app.models.db.enums import CampaignStatus, UserRole
 from app.jobs.queue import PriorityDelayQueue
 from app.jobs.worker_reconciliation import ReconciliationWorker
