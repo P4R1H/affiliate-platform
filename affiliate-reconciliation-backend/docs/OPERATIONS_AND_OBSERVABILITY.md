@@ -478,6 +478,9 @@ assert len(LAST_EXCEPTIONS) == 0, f"Worker exceptions: {LAST_EXCEPTIONS}"
 - Memory leaks (monitor system resources)
 
 ## 9. Troubleshooting Guide
+
+| Issue | Likely Causes | Steps |
+|-------|---------------|-------|
 | All reconciliations become MISSING | Platform outage, circuit breaker open, adapter import error | Check logs for `fetch_error` vs `circuit_open`; validate adapter module import |
 | Trust scores plummet globally | Misconfigured thresholds / growth allowance | Inspect `RECONCILIATION_SETTINGS`; run classifier unit tests with boundary values |
 | Alert flood (overclaim) | Real fraud wave or adapter returning low metrics | Sample PlatformReport vs raw affiliate claims to verify adapter integrity |
