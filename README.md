@@ -18,7 +18,7 @@ End-to-end system for receiving affiliate-reported performance metrics, normaliz
 ## System Overview
 
 Core responsibilities:
-1. Accept affiliate submissions (API now; Discord-style ingestion planned but schema-ready).
+1. Accept affiliate submissions (API and Discord-style ingestion complete).
 2. Normalize links & enrich platform context (e.g., Reddit permalink normalization).
 3. Generate or fetch platform truth metrics (mock adapters for now; real integration boundary preserved).
 4. Reconcile claims vs truth & log discrepancies for auditability.
@@ -29,7 +29,7 @@ Status: A lean but production-aligned core—no speculative abstractions, only p
 
 ## 1. High‑Level Overview
 This project implements an end‑to‑end reconciliation workflow:
-* Accept submissions (API today; Discord ingestion schema-ready)
+* Accept submissions (API and Discord complete)
 * Normalize links & identify platform context
 * Fetch or simulate platform metrics via modular adapters (mock-first, real-ready)
 * Reconcile claimed vs truth metrics, log outcomes, emit alerts, update trust scores

@@ -45,10 +45,7 @@ Autouse fixture (`_isolate_test_state`) in `conftest.py` performs:
 - Validates threading, session binding, and production-like execution path
 - Surfaces integration issues early (database sessions, queue timing, etc.)
 
-**Legacy Direct Calls**: Some integration tests still use `run_reconciliation()` directly:
-- Faster execution for focused logic testing
-- Used in `test_integration_reconciliation.py` for specific scenarios
-- Gradually being migrated to full worker path for consistency
+**Legacy Direct Calls**: Previously used in some integration tests for faster execution and focused logic testing, but have been fully migrated to worker-driven paths for consistency and to validate production-like flows.
 
 **Test Database**: Uses file-based SQLite (`test_worker.db`) to support:
 - Multi-threaded access (test thread + worker thread)
