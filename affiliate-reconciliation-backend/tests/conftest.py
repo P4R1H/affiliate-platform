@@ -150,15 +150,17 @@ def affiliate_factory(db_session):
 
 @pytest.fixture()
 def campaign_factory(db_session):
-    def _create(name: str, platform_ids: list[int]):
+    def _create(name: str, platform_ids: list[int], *, new_client: bool = False):
         from datetime import date
         from app.models.db import Platform, Campaign, Client, User
         from app.models.db.enums import UserRole
         import secrets
         
-        # Create a test client if one doesn't exist
-        client = db_session.query(Client).first()
-        if not client:
+        # Create or reuse client
+        client = None
+        if not new_client:
+            client = db_session.query(Client).first()
+        if client is None:
             client = Client(name=f"Test Client {secrets.token_hex(2)}")
             db_session.add(client)
             db_session.flush()

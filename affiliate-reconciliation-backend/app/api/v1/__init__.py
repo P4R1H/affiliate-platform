@@ -2,7 +2,7 @@
 API v1 router initialization and setup.
 """
 from fastapi import APIRouter
-from .endpoints import campaigns, users, clients, submissions, reconciliation, alerts, platforms
+from .endpoints import campaigns, users, clients, submissions, reconciliation, alerts, platforms, analytics
 
 api_router = APIRouter()
 
@@ -46,5 +46,11 @@ api_router.include_router(
     alerts.router, 
     prefix="/alerts", 
     tags=["alerts"]
+)
+
+api_router.include_router(
+    analytics.router,
+    prefix="/analytics",
+    tags=["analytics"]
 )
 
