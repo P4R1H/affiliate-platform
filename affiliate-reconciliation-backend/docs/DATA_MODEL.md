@@ -243,3 +243,27 @@ WHERE status='INCOMPLETE_PLATFORM_DATA' AND last_attempt_at >= CURRENT_TIMESTAMP
 - Introducing multi-log attempt entity: would copy existing log into initial attempt record, keep ReconciliationLog as a view of latest.
 
 ---
+
+## 13. Analytics (MVP) Derived Metrics
+The campaign analytics endpoint (`GET /api/v1/analytics/campaigns/{id}`) returns pre-aggregated, minimal metrics without historical slicing.
+
+| Field | Source Tables | Logic |
+|-------|---------------|-------|
+| totals.posts | posts | `COUNT(posts.id)` filtered by `campaign_id` |
+| totals.views / clicks / conversions | platform_reports JOIN posts | `SUM(platform_reports.metric)` NULL-safe via COALESCE |
+| reconciliation.pending_reports | affiliate_reports LEFT JOIN reconciliation_logs | `COUNT(affiliate_reports WHERE reconciliation_logs.id IS NULL)` |
+| reconciliation.total_reconciled | affiliate_reports | `total_reports - pending_reports` |
+| reconciliation.success_rate | reconciliation_logs | `success_reports / total_reconciled` (success = MATCHED, DISCREPANCY_LOW); NULL if zero reconciled |
+| platform_breakdown[] | platform_reports JOIN posts JOIN platforms | Grouped sums per platform (views, clicks, conversions) |
+| recent_alerts[] | alerts JOIN reconciliation_logs JOIN affiliate_reports JOIN posts | 5 most recent alerts for campaign |
+
+Design decisions:
+1. Success rate excludes medium/high discrepancies & overclaims to present a correctness indicator instead of raw reconciliation completion.
+2. NULL success_rate for zero reconciled reports avoids misleading 0.0 implication of failure.
+3. No date filtering to keep query simple (future: optional `start_date`, `end_date`, caching layer, materialized view).
+4. Platform metrics use platform truth (`platform_reports`) rather than affiliate claims for advertiser‑facing fidelity.
+
+Future enhancements:
+* Time-bucketed trend endpoints (daily aggregates) via materialized table.
+* Inclusion of discrepancy class distribution histogram.
+* Per-platform success_rate breakdown for operational triage.
