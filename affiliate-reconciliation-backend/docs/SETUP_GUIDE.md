@@ -12,7 +12,7 @@ Complete guide for setting up and running the Affiliate Reconciliation Platform 
 ### Fast Setup (Development - Native)
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/P4R1H/affiliate-platform
 cd affiliate-reconciliation-backend
 
 # Install dependencies
@@ -48,6 +48,9 @@ echo "ENABLE_DISCORD_BOT=true" >> .env
 # Bot will be available for affiliate reporting via Discord
 ```
 
+### Docker Quick Start
+For Docker-based setup with full stack (API + worker + Redis + PostgreSQL), see the [Docker-Based Setup](#docker-based-setup-recommended-for-consistent-environments) section below.
+
 ## Docker-Based Setup (Recommended for Consistent Environments)
 
 The repository now ships with a production-lean Dockerfile and a convenience `docker-compose.yml` for local development.
@@ -70,8 +73,8 @@ Default DB credentials (override via `.env`): `postgres:postgres` and database `
 Create `.env` (or copy from example) to override defaults:
 ```bash
 DATABASE_URL=postgresql://postgres:postgres@db/affiliate_reconciliation
-QUEUE_SETTINGS_USE_REDIS=true
-QUEUE_SETTINGS_REDIS_URL=redis://redis:6379/0
+USE_REDIS_QUEUE=true
+REDIS_URL=redis://redis:6379/0
 LOG_LEVEL=INFO
 ```
 
@@ -100,14 +103,14 @@ docker compose down -v
 ```
 
 ### Windows Notes
-* Use PowerShell: `cp .env.example .env` (or `copy` in cmd).
+* Use PowerShell: `Copy-Item .env.example .env` (or `copy .env.example .env` in cmd).
 * Ensure Docker Desktop has enough resources (at least 2 CPUs / 2GB RAM).
 * If port 5432 or 6379 already used, edit `docker-compose.yml` to change host port mapping.
 
 ### Building the Image Only
 ```bash
-docker build -t affiliate-platform:latest ./affiliate-reconciliation-backend
-docker run -p 8000:8000 --env-file ./affiliate-reconciliation-backend/.env affiliate-platform:latest
+docker build -t affiliate-platform:latest .
+docker run -p 8000:8000 --env-file .env affiliate-platform:latest
 ```
 
 ### Cleanup
@@ -184,7 +187,7 @@ poetry --version
 
 ```bash
 # Clone repository
-git clone <repository-url>
+git clone https://github.com/P4R1H/affiliate-platform
 cd affiliate-reconciliation-backend
 
 # Install dependencies
@@ -238,9 +241,9 @@ redis-cli monitor
 **Configure Application for Redis:**
 ```bash
 # Add to .env file
-QUEUE_SETTINGS_USE_REDIS=true
-QUEUE_SETTINGS_REDIS_URL=redis://localhost:6379/0
-QUEUE_SETTINGS_REDIS_HEALTH_CHECK_TIMEOUT=2.0
+USE_REDIS_QUEUE=true
+REDIS_URL=redis://localhost:6379/0
+REDIS_HEALTH_CHECK_TIMEOUT=2.0
 ```
 
 The application will automatically fall back to the in-memory queue if Redis is unavailable, ensuring continuity even if Redis fails.
@@ -308,12 +311,8 @@ DATABASE_URL=sqlite:///./test.db
 LOG_LEVEL=INFO
 LOG_FILE=logs/app.log
 
-# Security
-SECRET_KEY=your-secret-key-change-in-production
-
-# API Keys for Affiliates
-API_KEY_1=test_key_123
-API_KEY_2=another_test_key
+# Note: API keys for affiliates are managed through the database and the admin interface.
+# They are not configured as environment variables.
 
 # Discord Bot Configuration (Optional)
 ENABLE_DISCORD_BOT=false
@@ -329,20 +328,10 @@ MOCK_FAILURE_RATE=0.05
 # Network Timeouts
 REDDIT_LINK_RESOLVE_TIMEOUT=10
 
-# Reconciliation Settings
-RECONCILIATION_SETTINGS_BASE_TOLERANCE_PCT=0.05
-RECONCILIATION_SETTINGS_OVERCLAIM_THRESHOLD_PCT=0.20
-
-# Trust Scoring
-TRUST_SCORING_MIN_SCORE=0.0
-TRUST_SCORING_MAX_SCORE=1.0
-
 # Queue Settings
-QUEUE_SETTINGS_MAX_IN_MEMORY=5000
-QUEUE_SETTINGS_WARN_DEPTH=1000
-QUEUE_SETTINGS_USE_REDIS=false
-QUEUE_SETTINGS_REDIS_URL=redis://localhost:6379/0
-QUEUE_SETTINGS_REDIS_HEALTH_CHECK_TIMEOUT=2.0
+USE_REDIS_QUEUE=false
+REDIS_URL=redis://localhost:6379/0
+REDIS_HEALTH_CHECK_TIMEOUT=2.0
 
 # Alerting
 ALERTING_SETTINGS_PLATFORM_DOWN_ESCALATION_MINUTES=120
@@ -354,7 +343,24 @@ CIRCUIT_BREAKER_HALF_OPEN_PROBE_COUNT=3
 
 # CORS Origins (for web frontend)
 CORS_ORIGINS=http://localhost:3000,http://localhost:8080
-```
+
+# Rate Limiting (optional - defaults provided)
+RATE_LIMIT_DEFAULT_LIMIT=1000
+RATE_LIMIT_DEFAULT_WINDOW=3600
+RATE_LIMIT_SUBMISSION_LIMIT=100
+RATE_LIMIT_SUBMISSION_WINDOW=3600
+RATE_LIMIT_RECON_TRIGGER_LIMIT=10
+RATE_LIMIT_RECON_TRIGGER_WINDOW=60
+RATE_LIMIT_RECON_QUERY_LIMIT=100
+RATE_LIMIT_RECON_QUERY_WINDOW=60
+RATE_LIMIT_ROLE_ADMIN_LIMIT=5000
+RATE_LIMIT_ROLE_CLIENT_LIMIT=2000
+RATE_LIMIT_ROLE_AFFILIATE_LIMIT=1000
+
+# Initial Admin Setup (optional)
+ADMIN_NAME=AdminUser
+ADMIN_EMAIL=
+ADMIN_API_KEY=
 
 ### Optional Production Configuration
 
@@ -417,60 +423,26 @@ poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
 
 ### Simple Production Setup
 
-For MVP production deployment, you can use a simple approach:
+For MVP production deployment, you can use the provided Docker setup:
 
 #### Using Docker (Recommended for MVP)
 
-**Create Dockerfile:**
-```dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Poetry
-RUN pip install poetry
-
-# Copy dependency files
-COPY pyproject.toml poetry.lock ./
-
-# Configure Poetry
-RUN poetry config virtualenvs.create false
-
-# Install dependencies
-RUN poetry install --no-dev
-
-# Copy application code
-COPY . .
-
-# Create logs directory
-RUN mkdir -p logs
-
-# Expose port
-EXPOSE 8000
-
-# Start application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
+The repository includes a production-ready multi-stage `Dockerfile` and `docker-compose.yml`. Use the existing files for deployment:
 
 **Build and Run:**
 ```bash
 # Build Docker image
 docker build -t affiliate-platform .
 
-# Run container
+# Run container with production settings
 docker run -d \
   --name affiliate-platform \
   -p 8000:8000 \
   -v $(pwd)/logs:/app/logs \
-  -e DATABASE_URL=sqlite:///./prod.db \
+  -e DATABASE_URL=postgresql://user:pass@host/db \
   -e SECRET_KEY=your-production-secret-key \
-  -e QUEUE_SETTINGS_USE_REDIS=true \
-  -e QUEUE_SETTINGS_REDIS_URL=redis://redis:6379/0 \
+  -e USE_REDIS_QUEUE=true \
+  -e REDIS_URL=redis://redis:6379/0 \
   --link redis:redis \
   affiliate-platform
 
@@ -482,48 +454,10 @@ docker run -d --name redis redis:6
 
 **1. Docker Compose Setup (Recommended):**
 
-Create a `docker-compose.yml` file:
-```yaml
-version: '3'
+The repository includes a production-ready `docker-compose.yml` with app, worker, Redis, and PostgreSQL services. For production, update the environment variables in `.env` and run:
 
-services:
-  app:
-    build: .
-    ports:
-      - "8000:8000"
-    environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db/affiliate_reconciliation
-      - SECRET_KEY=your-production-secret-key
-      - QUEUE_SETTINGS_USE_REDIS=true
-      - QUEUE_SETTINGS_REDIS_URL=redis://redis:6379/0
-    volumes:
-      - ./logs:/app/logs
-    depends_on:
-      - db
-      - redis
-
-  db:
-    image: postgres:13
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=affiliate_reconciliation
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-
-  redis:
-    image: redis:6
-    volumes:
-      - redis-data:/data
-
-volumes:
-  postgres-data:
-  redis-data:
-```
-
-Start the services:
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 **2. Server Setup:**
@@ -549,7 +483,7 @@ source venv/bin/activate
 pip install poetry
 
 # Clone and install application
-git clone <repository-url> .
+git clone https://github.com/P4R1H/affiliate-platform .
 poetry install --no-dev
 
 # Create .env file with production settings
@@ -754,7 +688,6 @@ sudo systemctl restart affiliate-platform
 
 **1. Environment Variables:**
 - Never commit `.env` files to version control
-- Use strong, randomly generated SECRET_KEY
 - Rotate API keys regularly
 
 **2. API Security:**
