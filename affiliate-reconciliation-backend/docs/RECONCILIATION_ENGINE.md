@@ -148,7 +148,7 @@ Session lifecycle:
 - On breaker OPEN, call is denied early → classification path → missing.
 - Failures (including rate-limited) count toward breaker threshold (future refinement: treat rate limit separately).
 
-## 12. Logging & Observability Points
+## 13. Logging & Observability Points
 | Log Location | Purpose |
 |--------------|---------|
 | Worker start/finish | Operational heartbeat |
@@ -158,7 +158,7 @@ Session lifecycle:
 
 Future: metric counters for attempt latency, status distribution, trust event frequency.
 
-## 13. Configuration Cheat Sheet
+## 14. Configuration Cheat Sheet
 | Setting Namespace | Key Examples |
 |-------------------|--------------|
 | RECONCILIATION_SETTINGS | base_tolerance_pct, discrepancy_tiers, overclaim thresholds |
@@ -167,7 +167,7 @@ Future: metric counters for attempt latency, status distribution, trust event fr
 | ALERTING_SETTINGS | repeat_overclaim_window_hours=6 |
 | CIRCUIT_BREAKER | failure_threshold, open_cooldown_seconds, half_open_probe_count |
 
-## 14. Edge Case Handling
+## 15. Edge Case Handling
 | Edge Case | Behavior |
 |-----------|----------|
 | All claimed metrics zero, platform None | Missing classification, schedule retry |
@@ -175,7 +175,7 @@ Future: metric counters for attempt latency, status distribution, trust event fr
 | Rate limit mid-attempt | Treated as failure; attempts continue until max_attempts |
 | Auth error | Terminal inside fetch loop (no further in-attempt retries) |
 
-## 15. Example Reconciliation Trace (Annotated)
+## 16. Example Reconciliation Trace (Annotated)
 ```
 Attempt 1:
   FetchOutcome: success=True metrics={views:100, clicks:10, conversions:1}
@@ -195,7 +195,7 @@ Attempt 1 (Missing):
   Commit
 ```
 
-## 16. Future Enhancements Backlog (Engine Scope)
+## 17. Future Enhancements Backlog (Engine Scope)
 | Feature | Benefit |
 |---------|---------|
 | Attempt entity & idempotency token | Hard guards against double trust deltas |
