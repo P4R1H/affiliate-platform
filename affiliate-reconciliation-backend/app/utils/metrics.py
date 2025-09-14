@@ -11,6 +11,7 @@ def safe_div(numerator: float | int, denominator: float | int) -> float:
 
 
 def pct_diff(affiliate_value: int, platform_value: int) -> Optional[float]:
+    """Calculate percentage difference between affiliate and platform values."""
     if platform_value == 0 and affiliate_value == 0:
         return 0.0
     if platform_value == 0:
@@ -19,6 +20,7 @@ def pct_diff(affiliate_value: int, platform_value: int) -> Optional[float]:
 
 
 def apply_growth_allowance(platform_value: int, elapsed_hours: float, growth_per_hour: float, cap_hours: int) -> int:
+    """Apply growth allowance to platform value based on elapsed time."""
     hours = min(max(elapsed_hours, 0.0), float(cap_hours))
     allowance_factor = 1 + (growth_per_hour * hours)
     return int(round(platform_value * allowance_factor))

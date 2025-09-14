@@ -10,6 +10,7 @@ PRIORITY_MAP = {
 }
 
 def compute_priority(trust_score: float, has_suspicion_flags: bool) -> str:
+    """Compute queue priority based on trust score and suspicion flags."""
     bucket = bucket_for_priority(trust_score)
     label = PRIORITY_MAP.get(bucket, "normal")
     if has_suspicion_flags and label != "high":

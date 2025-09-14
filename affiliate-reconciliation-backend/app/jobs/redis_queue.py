@@ -20,6 +20,7 @@ On dequeue:
 
 Redis health check is performed before operations with fallback to in-memory queue.
 """
+
 from __future__ import annotations
 
 import json

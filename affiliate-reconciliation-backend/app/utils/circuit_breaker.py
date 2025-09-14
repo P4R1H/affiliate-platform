@@ -24,6 +24,7 @@ class CircuitBreaker:
         return self._states.setdefault(platform, BreakerState())
 
     def allow_call(self, platform: str) -> tuple[bool, str | None]:
+        """Check if call is allowed based on circuit breaker state."""
         st = self._get(platform)
         if st.state == "CLOSED":
             return True, None
@@ -43,6 +44,7 @@ class CircuitBreaker:
         return True, None
 
     def record_success(self, platform: str) -> None:
+        """Record a successful call."""
         st = self._get(platform)
         st.failures = 0
         if st.state in {"OPEN", "HALF_OPEN"}:
@@ -51,6 +53,7 @@ class CircuitBreaker:
             st.half_open_probes = 0
 
     def record_failure(self, platform: str) -> None:
+        """Record a failed call."""
         st = self._get(platform)
         st.failures += 1
         threshold = CIRCUIT_BREAKER["failure_threshold"]  # type: ignore[index]
@@ -62,6 +65,7 @@ class CircuitBreaker:
             st.opened_at = datetime.now(timezone.utc)
 
     def snapshot(self) -> dict[str, dict[str, object]]:
+        """Get current state of all circuit breakers."""
         return {
             k: {
                 "failures": v.failures,

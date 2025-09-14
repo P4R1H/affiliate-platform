@@ -153,6 +153,7 @@ class PlatformAPIResponse(BaseModel):
     cache_hit: bool = Field(False, description="Whether data came from cache")
 
     def to_unified_metrics(self) -> UnifiedMetrics:
+        """Convert platform-specific metrics to unified format."""
         return UnifiedMetrics(
             views=self.views,
             clicks=self.clicks,

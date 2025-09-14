@@ -53,6 +53,10 @@ def maybe_create_alert(
     post: Post,
     retry_scheduled: bool,
 ) -> Optional[Alert]:
+    """Create an alert if reconciliation status warrants it.
+
+    Only creates one alert per reconciliation log.
+    """
     # Do not create if already present
     if log.alert is not None:
         return None

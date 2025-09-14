@@ -1,21 +1,5 @@
 """
 Analytics endpoints (MVP).
-
-GET /api/v1/analytics/campaigns/{id}/ returns essential campaign metrics:
-  - totals: posts, views, clicks, conversions (platform truth aggregation)
-  - reconciliation health: success_rate, pending_reports, total_reconciled
-  - platform_breakdown: per platform totals
-  - recent_alerts: last 5 alerts (id, severity, status, title, created_at)
-
-RBAC:
-  - Admin users: access any campaign
-  - Client users: only campaigns belonging to their client_id
-  - Affiliate users: forbidden (403)
-
-Implementation notes:
-  * Single round-trip using aggregate subqueries where practical.
-  * Keep response flat + minimal nesting per scope.
-  * No date range filtering for MVP.
 """
 from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status, Request
@@ -42,6 +26,7 @@ async def get_campaign_analytics(
     campaign: Campaign = Depends(get_campaign_if_authorized),
     db: Session = Depends(get_db)
 ):
+    """Get aggregated analytics for a campaign including posts and platform metrics."""
     start = time.time()
     request_id = request.headers.get("X-Request-ID", "unknown")
 
