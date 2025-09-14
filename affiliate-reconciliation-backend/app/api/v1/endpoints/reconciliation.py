@@ -5,8 +5,9 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session, selectinload
 import time
-from app.api.deps import get_db
-from app.models.db import ReconciliationLog, AffiliateReport, PlatformReport, Post
+from app.api.deps import get_db, require_role
+from app.models.db.enums import UserRole
+from app.models.db import ReconciliationLog, AffiliateReport, PlatformReport, Post, User
 from app.models.schemas.reconciliation import (
     ReconciliationResult,
     ReconciliationTrigger,
@@ -31,13 +32,14 @@ logger = get_logger(__name__)
 async def trigger_reconciliation(
     trigger_data: ReconciliationTrigger,
     request: Request,
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.CLIENT])),
     db: Session = Depends(get_db)
 ) -> ResponseBase:
     """Manually enqueue reconciliation jobs.
 
     Modes:
-      - post_id provided: enqueue latest affiliate report for that post (respect force_reprocess)
-      - no post_id: enqueue all PENDING affiliate reports lacking a reconciliation_log (or all if force_reprocess)
+      - post_id provided: enqueue latest user report for that post (respect force_reprocess)
+      - no post_id: enqueue all PENDING user reports lacking a reconciliation_log (or all if force_reprocess)
     """
     start_time = time.time()
     request_id = request.headers.get("X-Request-ID", "unknown")
@@ -57,7 +59,7 @@ async def trigger_reconciliation(
         enqueued: list[int] = []
 
         def enqueue_for_report(report: AffiliateReport):
-            trust_score = float(getattr(report.post.affiliate, "trust_score", 0.5) or 0.5)
+            trust_score = float(getattr(report.post.user, "trust_score", 0.5) or 0.5)
             bucket = bucket_for_priority(trust_score)
             priority_label = compute_priority(trust_score, bool(report.suspicion_flags))
             job = ReconciliationJob(affiliate_report_id=report.id, priority=priority_label)
@@ -74,12 +76,12 @@ async def trigger_reconciliation(
             )
 
         if trigger_data.post_id is not None:
-            post: Post | None = db.query(Post).options(selectinload(Post.affiliate_reports), selectinload(Post.affiliate)).filter(Post.id == trigger_data.post_id).first()
+            post: Post | None = db.query(Post).options(selectinload(Post.affiliate_reports), selectinload(Post.user)).filter(Post.id == trigger_data.post_id).first()
             if not post:
                 raise HTTPException(status_code=404, detail=f"Post {trigger_data.post_id} not found")
-            # choose most recent affiliate report
+            # choose most recent user report
             if not post.affiliate_reports:
-                raise HTTPException(status_code=400, detail="Post has no affiliate reports to reconcile")
+                raise HTTPException(status_code=400, detail="Post has no user reports to reconcile")
             # Determine latest report by submitted_at (fallback to id for safety)
             latest = max(
                 post.affiliate_reports,
@@ -91,7 +93,7 @@ async def trigger_reconciliation(
         else:
             # bulk mode
             query = db.query(AffiliateReport).join(Post).options(
-                selectinload(AffiliateReport.post).selectinload(Post.affiliate)
+                selectinload(AffiliateReport.post).selectinload(Post.user)
             )
             if not trigger_data.force_reprocess:
                 query = query.filter(AffiliateReport.reconciliation_log == None)  # noqa: E711
@@ -147,6 +149,7 @@ async def get_reconciliation_results(
     offset: int = Query(0, ge=0),
     status_filter: Optional[str] = Query(None),
     discrepancy_level: Optional[str] = Query(None),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.CLIENT])),
     db: Session = Depends(get_db)
 ) -> List[Dict[str, Any]]:
     """Get reconciliation results with filtering and pagination."""
@@ -229,7 +232,7 @@ async def get_reconciliation_results(
     response_model=ResponseBase,
     summary="Get reconciliation queue snapshot"
 )
-async def queue_snapshot(request: Request) -> ResponseBase:
+async def queue_snapshot(request: Request, current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.CLIENT]))) -> ResponseBase:
     request_id = request.headers.get("X-Request-ID", "unknown")
     queue = getattr(request.app.state, "reconciliation_queue", None)  # type: ignore[attr-defined]
     if queue is None:
@@ -240,7 +243,7 @@ async def queue_snapshot(request: Request) -> ResponseBase:
 
 def _build_reconciliation_result(log: ReconciliationLog) -> ReconciliationResult:
     post = log.affiliate_report.post
-    # Affiliate (claimed) metrics
+    # User (claimed) metrics
     from app.models.schemas.base import UnifiedMetrics
     affiliate_metrics = UnifiedMetrics(
         views=log.affiliate_report.claimed_views,
@@ -249,7 +252,7 @@ def _build_reconciliation_result(log: ReconciliationLog) -> ReconciliationResult
         post_url=post.url,
         platform_name=post.platform.name if post.platform else "unknown",
         timestamp=log.affiliate_report.submitted_at,  # type: ignore[arg-type]
-        source="affiliate_claim",
+        source="user_claim",
     )
     platform_metrics = None
     if log.platform_report:
@@ -288,7 +291,7 @@ def _build_reconciliation_result(log: ReconciliationLog) -> ReconciliationResult
         ),
     ]
 
-    # Trust score change placeholder (needs log fields if stored); for now compute from affiliate current & log.trust_delta if present
+    # Trust score change placeholder (needs log fields if stored); for now compute from user current & log.trust_delta if present
     trust_change = None
     if hasattr(log, "trust_delta") and log.trust_delta is not None:
         prev = float(getattr(log, "previous_trust_score", 0.0) or 0.0)
@@ -334,11 +337,12 @@ def _build_reconciliation_result(log: ReconciliationLog) -> ReconciliationResult
 @router.get(
     "/logs/{affiliate_report_id}",
     response_model=ReconciliationResult,
-    summary="Get reconciliation result for a specific affiliate report"
+    summary="Get reconciliation result for a specific report"
 )
 async def get_reconciliation_result(
     affiliate_report_id: int,
     request: Request,
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.CLIENT])),
     db: Session = Depends(get_db)
 ) -> ReconciliationResult:
     log_entry = db.query(ReconciliationLog).options(
