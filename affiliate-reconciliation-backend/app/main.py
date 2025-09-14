@@ -19,7 +19,11 @@ from app.jobs.worker_reconciliation import ReconciliationWorker, create_queue
 from app.jobs.reconciliation_job import ReconciliationJob
 from app.database import engine
 from app.database import Base
-from app.config import QUEUE_SETTINGS
+from app.config import QUEUE_SETTINGS, RATE_LIMIT_SETTINGS
+from app.utils.ratelimiter import rate_limiter
+from app.models.db.enums import UserRole
+from app.database import SessionLocal
+from app.models.db import User
 
 # Setup logging before creating the app
 setup_logging(
@@ -145,8 +149,9 @@ app = FastAPI(
     ```
     
     ## Rate Limiting
-    * 1000 requests per hour per API key
-    * 100 submissions per hour per affiliate
+    Per-API key limits with categories (see API docs for full details). Standard headers:
+    `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`.
+    Defaults: generic=1000/hr, submissions=100/hr, recon triggers=10/min, recon queries=100/min.
     
     ## Support
     For technical support, contact: support@affiliate-platform.com
@@ -178,6 +183,92 @@ app.add_middleware(
 
 # Compression middleware for better performance
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# Rate limiting middleware (must run after request context logging to reuse request_id)
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    """Apply per-API key rate limits with endpoint categorization.
+
+    Categories mapping (prefix-based):
+      /api/v1/submissions -> submission
+      /api/v1/reconciliation/run -> recon_trigger (POST)
+      /api/v1/reconciliation/(results|logs|queue) -> recon_query
+    Fallback: default
+
+    Role overrides (RATE_LIMIT_SETTINGS['role_overrides']) adjust *default* limit only.
+    """
+    path = request.url.path
+    method = request.method.upper()
+    category = "default"
+    if path.startswith("/api/v1/submissions"):
+        category = "submission"
+    elif path.startswith("/api/v1/reconciliation/run") and method == "POST":
+        category = "recon_trigger"
+    elif path.startswith("/api/v1/reconciliation/") and any(x in path for x in ["results", "logs", "queue"]):
+        category = "recon_query"
+
+    settings = RATE_LIMIT_SETTINGS.get(category, RATE_LIMIT_SETTINGS["default"])
+    limit = int(settings.get("limit", 1000))  # type: ignore[arg-type]
+    window_seconds = int(settings.get("window_seconds", 3600))  # type: ignore[arg-type]
+
+    # Extract API key / bot token for keying. If absent, treat as anonymous (optional: skip limiting)
+    auth_header = request.headers.get("Authorization", "")
+    api_key = None
+    if auth_header.startswith("Bearer "):
+        api_key = auth_header[7:]
+    elif auth_header.startswith("Bot "):
+        # Bot submissions still apply submission category limit keyed by discord user if provided
+        discord_id = request.headers.get("X-Discord-User-ID", "bot")
+        api_key = f"bot:{discord_id}"
+    else:
+        # Health/root docs etc; we can bypass strict enforcement but still apply a shared key
+        api_key = "public"
+
+    # Role override only for default category (makes generic limit larger for privileged roles)
+    if category == "default" and auth_header.startswith("Bearer "):
+        # Minimal DB lookup to get role (avoid re-query duplication with dependency). Acceptable cost.
+        db = None
+        try:
+            db = SessionLocal()
+            user = db.query(User).filter(User.api_key == api_key, User.is_active == True).first()  # type: ignore[arg-type]
+            if user:
+                role_overrides = RATE_LIMIT_SETTINGS.get("role_overrides", {})  # type: ignore[assignment]
+                override = role_overrides.get(user.role.value) if hasattr(user.role, "value") else role_overrides.get(str(user.role))
+                if override:
+                    limit = int(override)
+        except Exception:
+            pass
+        finally:
+            if db is not None:
+                try:
+                    db.close()
+                except Exception:
+                    pass
+
+    allowed, meta = await rate_limiter.check_and_increment(api_key, category, limit, window_seconds)
+
+    if not allowed:
+        # Build 429 with headers
+        from fastapi.responses import JSONResponse
+        resp = JSONResponse(
+            status_code=429,
+            content={
+                "success": False,
+                "message": f"Rate limit exceeded for category '{category}'",
+                "category": category,
+            },
+        )
+        resp.headers["X-RateLimit-Limit"] = str(meta["limit"])
+        resp.headers["X-RateLimit-Remaining"] = "0"
+        resp.headers["X-RateLimit-Reset"] = str(meta["reset_epoch"])
+        return resp
+
+    # Proceed
+    response = await call_next(request)
+    response.headers["X-RateLimit-Limit"] = str(meta["limit"])
+    response.headers["X-RateLimit-Remaining"] = str(meta["remaining"])
+    response.headers["X-RateLimit-Reset"] = str(meta["reset_epoch"])
+    return response
 
 # Request ID and comprehensive logging middleware
 @app.middleware("http")

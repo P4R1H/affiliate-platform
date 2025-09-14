@@ -148,6 +148,8 @@ __all__ = [
 	"QUEUE_SETTINGS",
 	"ALERTING_SETTINGS",
 	"DATA_QUALITY_SETTINGS",
+	# Rate limiting
+	"RATE_LIMIT_SETTINGS",
     # Discord / external interface
     "DISCORD_BOT_TOKEN",
     "DISCORD_COMMAND_GUILDS",
@@ -175,4 +177,39 @@ API_BASE_URL: str = os.getenv("API_BASE_URL", "http://localhost:8000/api/v1")
 # scoped submission endpoints (alternate to affiliate API keys). Keep this
 # secret secure and rotate periodically.
 BOT_INTERNAL_TOKEN: str | None = os.getenv("BOT_INTERNAL_TOKEN") or None
+
+# ------------------------------ Rate Limiting ----------------------------- #
+# Simple in-memory rate limiting defaults (fixed window) per API key.
+# These values are intentionally conservative & configurable via env.
+# NOTE: For multi-instance deployments, replace with Redis/central store.
+RATE_LIMIT_SETTINGS: dict[str, dict[str, int | float]] = {
+	# Generic request limits (all endpoints unless overridden by a category)
+	"default": {
+		"limit": int(os.getenv("RATE_LIMIT_DEFAULT_LIMIT", "1000")),  # requests
+		"window_seconds": int(os.getenv("RATE_LIMIT_DEFAULT_WINDOW", "3600")),  # 1 hour
+	},
+	# Submissions (affiliate content submissions & metric updates)
+	"submission": {
+		"limit": int(os.getenv("RATE_LIMIT_SUBMISSION_LIMIT", "100")),
+		"window_seconds": int(os.getenv("RATE_LIMIT_SUBMISSION_WINDOW", "3600")),
+	},
+	# Manual reconciliation triggers (admin/client)
+	"recon_trigger": {
+		"limit": int(os.getenv("RATE_LIMIT_RECON_TRIGGER_LIMIT", "10")),
+		"window_seconds": int(os.getenv("RATE_LIMIT_RECON_TRIGGER_WINDOW", "60")),  # per minute
+	},
+	# Reconciliation query endpoints (results/logs/queue)
+	"recon_query": {
+		"limit": int(os.getenv("RATE_LIMIT_RECON_QUERY_LIMIT", "100")),
+		"window_seconds": int(os.getenv("RATE_LIMIT_RECON_QUERY_WINDOW", "60")),
+	},
+	# Optional role-based overrides (if provided; keys map to UserRole values)
+	"role_overrides": {
+		# Example: admins get higher generic limit
+		"ADMIN": int(os.getenv("RATE_LIMIT_ROLE_ADMIN_LIMIT", "5000")),
+		"CLIENT": int(os.getenv("RATE_LIMIT_ROLE_CLIENT_LIMIT", "2000")),
+		# Affiliates retain default unless overridden
+		"AFFILIATE": int(os.getenv("RATE_LIMIT_ROLE_AFFILIATE_LIMIT", "1000")),
+	},
+}
 
