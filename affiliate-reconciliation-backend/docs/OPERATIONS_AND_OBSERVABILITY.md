@@ -38,159 +38,6 @@ The platform uses a comprehensive structured logging system with JSON formatting
 ```python
 from app.utils import setup_logging, get_logger
 
-# Check platform fetch performance
-grep "Performance: platform_fetch" logs/app.log | jq '.duration_ms'
-
-# Monitor circuit breaker state changes
-grep "circuit_" logs/app.log
-
-# Find request correlation
-grep "request_id.*123e4567" logs/app.log
-```
-
-## 11. Incident Response Playbook (Abbreviated)# Circuit Breaker States
-
-- **CLOSED**: Normal operation, requests pass through
-- **OPEN**: Failure threshold exceeded, requests fail fast
-- **HALF_OPEN**: Testing recovery, limited requests allowed
-
-### Configuration
-
-```python
-# From app/config.py
-CIRCUIT_BREAKER = {
-    "failure_threshold": 5,        # Failures before opening
-    "open_cooldown_seconds": 60,   # Time before half-open
-    "half_open_probe_count": 3,    # Requests in half-open state
-}
-```
-
-### Monitoring Circuit Breaker State
-
-```python
-from app.utils.circuit_breaker import GLOBAL_CIRCUIT_BREAKER
-
-# Get snapshot of all breaker states
-snapshot = GLOBAL_CIRCUIT_BREAKER.snapshot()
-print(snapshot)
-# Output: {
-#   "reddit": {
-#     "failures": 0,
-#     "state": "CLOSED",
-#     "opened_at": None,
-#     "half_open_probes": 0
-#   },
-#   "instagram": {
-#     "failures": 2,
-#     "state": "CLOSED",
-#     "opened_at": None,
-#     "half_open_probes": 0
-#   }
-# }
-```
-
-### Diagnostic Endpoint (Future)
-
-Consider adding an API endpoint to expose breaker states:
-
-```python
-@app.get("/debug/circuit-breakers")
-async def circuit_breaker_status():
-    """Debug endpoint for circuit breaker monitoring."""
-    return GLOBAL_CIRCUIT_BREAKER.snapshot()
-```
-
-### Troubleshooting Circuit Breaker Issues
-
-| Symptom | Action |
-|---------|--------|
-| Frequent `circuit_open` warnings | Confirm upstream platform API availability; consider raising threshold temporarily |
-| Rapid OPEN ↔ HALF_OPEN flapping | Increase `open_cooldown_seconds` or reduce `half_open_probe_count` |
-| High missing due to breaker | Add missing_reason instrumentation to differentiate true missing |atform provides comprehensive health check endpoints for load balancers and monitoring systems.
-
-### Basic Health Check
-
-**Endpoint**: `GET /health`
-
-Returns basic health status for load balancer checks:
-
-```json
-{
-  "status": "healthy",
-  "service": "affiliate-reconciliation-platform",
-  "version": "1.0.0",
-  "timestamp": 1703123456.789,
-  "redis_status": "healthy"
-}
-```
-
-### Detailed Health Check
-
-**Endpoint**: `GET /health/detailed`
-
-Performs comprehensive system checks:
-
-```json
-{
-  "status": "healthy",
-  "service": "affiliate-reconciliation-platform",
-  "version": "1.0.0",
-  "timestamp": 1703123456.789,
-  "checks": {
-    "database": "healthy",
-    "redis": "healthy"
-  }
-}
-```
-
-**Checks Performed**:
-- **Database Connectivity**: Tests database connection and basic query execution
-- **Redis Connectivity**: Verifies Redis connection for queue operations
-- **Future Checks**: External APIs, file system, queue depth
-
-### Health Check Configuration
-
-Health checks can be extended to monitor:
-- Queue depth and worker status
-- Circuit breaker states
-- External service dependencies
-- Disk space and system resources
-- Platform API rate limits
-
-## 7. Circuit Breaker Runbook-----------|
-| Timely anomaly detection | Surface fraud or data issues quickly |
-| Minimal MTTR | Provide clear diagnostics to resolve failures fast |
-| Predictable performance | Stable ingestion latency & processing throughput |
-| Transparent state | Ability to answer "what is the status of X" immediately |
-
-## 2. Runtime Components & Ownership
-| Component | Responsibility | Owner |
-|-----------|---------------|-------|
-| API (FastAPI) | Submission handling, CRUD endpoints | Backend |
-| Queue | Buffer & prioritize reconciliation jobs | Backend |
-| Worker | Execute reconciliation attempts | Backend |
-| Circuit Breaker | Integration protection | Backend |
-| Alerting Logic | Emission of risk/ops signals | Risk/Backend |
-| DB (SQLite test / future RDBMS) | Persistence | DevOps/DBA |
-
-## 3. Logging Infrastructure
-
-The platform uses a comprehensive structured logging system with JSON formatting for production and human-readable formatting for development.
-
-### Logger Configuration
-
-**File**: `app/utils/logger.py`
-
-**Features**:
-- **JSONFormatter**: Structured JSON logging for production with timestamps, levels, and metadata
-- **StructuredLogger**: Wrapper class providing typed logging methods with extra data support
-- **RotatingFileHandler**: Automatic log rotation (10MB files, 5 backups)
-- **Multi-handler Support**: Console + file logging with different formats
-
-**Setup**:
-```python
-from app.utils import setup_logging, get_logger
-
 # Setup logging (called in main.py)
 setup_logging(
     log_level=os.getenv("LOG_LEVEL", "INFO"),
@@ -341,7 +188,7 @@ def log_performance(
 | trust_score_bucket_total{bucket} | Counter | Risk posture shift |
 | breaker_state_total{platform,state} | Counter/Gauge | Platform stability visibility |
 
-## 5. Health Checks / SLO Concepts
+## 6. Health Checks / SLO Concepts
 | Signal | Acceptable Target (MVP) |
 |--------|-------------------------|
 | Median submission latency | < 150ms |
@@ -350,7 +197,113 @@ def log_performance(
 | Queue depth sustained | < 100 (tunable) |
 | Missing terminal ratio (24h) | < 5% of total reconciliations |
 
-## 6. Circuit Breaker Runbook
+The platform provides comprehensive health check endpoints for load balancers and monitoring systems.
+
+### Basic Health Check
+
+**Endpoint**: `GET /health`
+
+Returns basic health status for load balancer checks:
+
+```json
+{
+  "status": "healthy",
+  "service": "affiliate-reconciliation-platform",
+  "version": "1.0.0",
+  "timestamp": 1703123456.789,
+  "redis_status": "healthy"
+}
+```
+
+### Detailed Health Check
+
+**Endpoint**: `GET /health/detailed`
+
+Performs comprehensive system checks:
+
+```json
+{
+  "status": "healthy",
+  "service": "affiliate-reconciliation-platform",
+  "version": "1.0.0",
+  "timestamp": 1703123456.789,
+  "checks": {
+    "database": "healthy",
+    "redis": "healthy"
+  }
+}
+```
+
+**Checks Performed**:
+- **Database Connectivity**: Tests database connection and basic query execution
+- **Redis Connectivity**: Verifies Redis connection for queue operations
+- **Future Checks**: External APIs, file system, queue depth
+
+### Health Check Configuration
+
+Health checks can be extended to monitor:
+- Queue depth and worker status
+- Circuit breaker states
+- External service dependencies
+- Disk space and system resources
+- Platform API rate limits
+
+## 7. Circuit Breaker Runbook
+
+### Circuit Breaker States
+
+- **CLOSED**: Normal operation, requests pass through
+- **OPEN**: Failure threshold exceeded, requests fail fast
+- **HALF_OPEN**: Testing recovery, limited requests allowed
+
+### Configuration
+
+```python
+# From app/config.py
+CIRCUIT_BREAKER = {
+    "failure_threshold": 5,        # Failures before opening
+    "open_cooldown_seconds": 300,  # Time before half-open (corrected from doc's 60)
+    "half_open_probe_count": 3,    # Requests in half-open state
+}
+```
+
+### Monitoring Circuit Breaker State
+
+```python
+from app.utils.circuit_breaker import GLOBAL_CIRCUIT_BREAKER
+
+# Get snapshot of all breaker states
+snapshot = GLOBAL_CIRCUIT_BREAKER.snapshot()
+print(snapshot)
+# Output: {
+#   "reddit": {
+#     "failures": 0,
+#     "state": "CLOSED",
+#     "opened_at": None,
+#     "half_open_probes": 0
+#   },
+#   "instagram": {
+#     "failures": 2,
+#     "state": "CLOSED",
+#     "opened_at": None,
+#     "half_open_probes": 0
+#   }
+# }
+```
+
+### Diagnostic Endpoint (Future)
+
+Consider adding an API endpoint to expose breaker states:
+
+```python
+@app.get("/debug/circuit-breakers")
+async def circuit_breaker_status():
+    """Debug endpoint for circuit breaker monitoring."""
+    return GLOBAL_CIRCUIT_BREAKER.snapshot()
+```
+
+### Troubleshooting Circuit Breaker Issues
+
 | Symptom | Action |
 |---------|--------|
 | Frequent `circuit_open` warnings | Confirm upstream platform API availability; consider raising threshold temporarily |
@@ -359,7 +312,7 @@ def log_performance(
 
 Breaker Snapshot (internal debug suggestion): add diagnostic endpoint returning `GLOBAL_CIRCUIT_BREAKER.snapshot()` for ops dashboards.
 
-## 7. Middleware & Request Processing
+## 8. Middleware & Request Processing
 
 **File**: `app/main.py`
 
@@ -413,7 +366,7 @@ All errors include:
 - Appropriate HTTP status codes
 - Sanitized error messages for security
 
-## 8. Worker Observability
+## 9. Worker Observability
 
 **File**: `app/jobs/worker_reconciliation.py`
 
@@ -480,7 +433,7 @@ assert len(LAST_EXCEPTIONS) == 0, f"Worker exceptions: {LAST_EXCEPTIONS}"
 - Database connection issues
 - Memory leaks (monitor system resources)
 
-## 9. Troubleshooting Guide
+## 10. Troubleshooting Guide
 
 | Issue | Likely Causes | Steps |
 |-------|---------------|-------|
@@ -490,14 +443,15 @@ assert len(LAST_EXCEPTIONS) == 0, f"Worker exceptions: {LAST_EXCEPTIONS}"
 | Queue depth climbs | Worker stalled, long fetch times, increase in submissions | Check worker logs; profile platform fetch durations |
 | Reconciliation log updates failing | DB schema drift / migrations | Inspect DB migrations (future) and error logs |
 
-## 8. Incident Response Playbook (Abbreviated)
+## 11. Incident Response Playbook (Abbreviated)
+
 1. Classify incident (Fraud surge / External Platform Outage / Internal Degradation).
 2. Snapshot metrics (queue depth, status distribution, breaker states).
 3. Contain (e.g., temporarily reduce submission acceptance or disable problematic platform).
 4. Correct (adapter fix, config adjustment, dependency rollback).
 5. Communicate (status channel + retrospective).
 
-## 9. Configuration Changes - Safe Deployment Tips
+## 12. Configuration Changes - Safe Deployment Tips
 | Config | Risk | Safe Practice |
 |--------|------|--------------|
 | Base tolerance | Over/under flagging | Roll out small increments; monitor discrepancy distribution |
@@ -505,7 +459,7 @@ assert len(LAST_EXCEPTIONS) == 0, f"Worker exceptions: {LAST_EXCEPTIONS}"
 | Trust deltas | Score inflation / collapse | Simulate on historical sample before apply |
 | Circuit breaker threshold | Resilience vs latency | Adjust during off-peak; watch error mix |
 
-## 10. Observability Backlog
+## 13. Observability Backlog
 | Item | Benefit |
 |------|--------|
 | Structured JSON logs for all services | Easier ingestion into ELK/Datadog |
@@ -514,7 +468,7 @@ assert len(LAST_EXCEPTIONS) == 0, f"Worker exceptions: {LAST_EXCEPTIONS}"
 | Tracing (OpenTelemetry) | End-to-end latency insight |
 | Derived risk dashboard | Single pane of risk posture |
 
-## 11. Security & Access Considerations
+## 14. Security & Access Considerations
 | Aspect | Current | Future |
 |--------|---------|--------|
 | API Auth | Static affiliate API keys | OAuth or key rotation service |
@@ -522,7 +476,7 @@ assert len(LAST_EXCEPTIONS) == 0, f"Worker exceptions: {LAST_EXCEPTIONS}"
 | Least Privilege | Single app role | Separate read-only analytics role |
 | Secrets Management | .env | Central secret manager |
 
-## 12. Capacity Planning Notes
+## 15. Capacity Planning Notes
 | Variable | Impact |
 |----------|--------|
 | Submissions per second | Queue depth linear growth if > worker throughput |
@@ -532,24 +486,23 @@ assert len(LAST_EXCEPTIONS) == 0, f"Worker exceptions: {LAST_EXCEPTIONS}"
 
 Future scaling: horizontal worker pool + distributed queue; ensure idempotent job design first.
 
-## 13. Disaster Recovery (Forward-Looking)
+## 16. Disaster Recovery (Forward-Looking)
 | Scenario | Strategy |
 |----------|----------|
 | Primary DB loss | Automated backups + restore; replay submission queue if externalized |
 | Adapter logic regression | Feature flag / rapid rollback (package versioning) |
 | Configuration corruption | Maintain versioned config; validation on load |
 
-## 14. Minimal Local Ops Checklist
+## 17. Minimal Local Ops Checklist
 1. `pytest` (green tests).
 2. Run app locally (uvicorn) & submit sample payload.
 3. Confirm reconciliation log & alert (overclaim scenario) created.
 4. Review logs for expected worker lifecycle lines.
 
-## 15. Future Runbook Additions
+## 18. Future Runbook Additions
 | Planned Section | Trigger |
 |-----------------|---------|
 | Throttling high-risk affiliates | Queue saturation by low trust bucket |
 | Bulk re-reconciliation procedure | Schema change affecting diff calculations |
 | Data export for compliance | Audit request |
 
----
