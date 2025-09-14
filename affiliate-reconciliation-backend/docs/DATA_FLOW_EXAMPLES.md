@@ -182,45 +182,68 @@ VALUES (401, 201, 'MATCHED', 1, '2024-01-15 10:30:03', 2.5, 25, 5, 0, 0.5, 3.4, 
 
 **API Query for Results:**
 ```http
-GET /api/v1/submissions/101/metrics
-Authorization: Bearer aff_john_smith_key
+GET /api/v1/reconciliation/logs/201
+Authorization: Bearer admin_key
 ```
 
 **Response:**
 ```json
 {
-  "success": true,
-  "data": {
-    "post_id": 101,
-    "affiliate_metrics": {
-      "claimed_views": 5000,
-      "claimed_clicks": 150,
-      "claimed_conversions": 8,
-      "submission_method": "API",
-      "submitted_at": "2024-01-15T10:30:00Z"
+  "id": 401,
+  "affiliate_report_id": 201,
+  "platform_report_id": 301,
+  "status": "MATCHED",
+  "discrepancy_level": null,
+  "views_discrepancy": 25,
+  "clicks_discrepancy": 5,
+  "conversions_discrepancy": 0,
+  "views_diff_pct": 0.5,
+  "clicks_diff_pct": 3.4,
+  "conversions_diff_pct": 0.0,
+  "discrepancies": [
+    {
+      "metric": "views",
+      "claimed": 5000,
+      "platform": 4975,
+      "difference": 25,
+      "percentage": 0.5
     },
-    "platform_metrics": {
-      "observed_views": 4950,
-      "observed_clicks": 145,
-      "observed_conversions": 8,
-      "growth_adjustment": 25,
-      "adjusted_views": 4975,
-      "fetched_at": "2024-01-15T10:30:03Z"
+    {
+      "metric": "clicks", 
+      "claimed": 150,
+      "platform": 145,
+      "difference": 5,
+      "percentage": 3.4
     },
-    "reconciliation": {
-      "status": "MATCHED",
-      "discrepancy_level": null,
-      "max_discrepancy_pct": 3.4,
-      "confidence_ratio": 1.0,
-      "attempt_count": 1,
-      "last_attempt_at": "2024-01-15T10:30:03Z"
-    },
-    "trust_impact": {
-      "event": "perfect_match",
-      "previous_score": 0.78,
-      "new_score": 0.79,
-      "delta": 0.01
+    {
+      "metric": "conversions",
+      "claimed": 8,
+      "platform": 8,
+      "difference": 0,
+      "percentage": 0.0
     }
+  ],
+  "max_discrepancy_pct": 3.4,
+  "trust_change": {
+    "event": "perfect_match",
+    "previous_score": 0.78,
+    "new_score": 0.79,
+    "delta": 0.01
+  },
+  "alert": null,
+  "job": null,
+  "meta": {},
+  "notes": null,
+  "processed_at": "2024-01-15T10:30:03Z",
+  "affiliate_metrics": {
+    "views": 5000,
+    "clicks": 150,
+    "conversions": 8
+  },
+  "platform_metrics": {
+    "views": 4975,
+    "clicks": 145,
+    "conversions": 8
   }
 }
 ```
@@ -336,20 +359,19 @@ Authorization: Bearer admin_key
   "data": [
     {
       "id": 501,
+      "reconciliation_log_id": 402,
       "alert_type": "HIGH_DISCREPANCY",
-      "category": "FRAUD",
-      "severity": "CRITICAL",
       "title": "Critical overclaim detected",
       "message": "Affiliate significantly overclaimed metrics on Instagram post - requires immediate investigation",
-      "affiliate_name": "Suspicious User",
-      "platform_name": "instagram",
       "threshold_breached": {
         "max_discrepancy_pct": 1289,
         "overclaim_threshold": 50
       },
       "status": "OPEN",
-      "created_at": "2024-01-15T11:15:00Z",
-      "post_url": "https://instagram.com/p/aBc123DeF/"
+      "resolved_by": null,
+      "resolved_at": null,
+      "resolution_notes": null,
+      "created_at": "2024-01-15T11:15:00Z"
     }
   ]
 }
@@ -478,16 +500,14 @@ This example shows triggering reconciliation for multiple posts.
 
 ### Step 1: Manual Trigger Request
 
-**Admin triggers reconciliation for campaign:**
+**Admin triggers reconciliation for all pending reports:**
 ```http
 POST /api/v1/reconciliation/run
 Authorization: Bearer admin_key
 Content-Type: application/json
 
 {
-  "campaign_id": 1,
-  "force_reprocess": false,
-  "status_filter": ["PENDING", "INCOMPLETE_PLATFORM_DATA"]
+  "force_reprocess": false
 }
 ```
 
@@ -511,7 +531,7 @@ Content-Type: application/json
 
 **Results summary after completion:**
 ```http
-GET /api/v1/reconciliation/results?campaign_id=1&start_date=2024-01-15T15:00:00Z
+GET /api/v1/reconciliation/results?status_filter=MATCHED&limit=50
 ```
 
 ```json
