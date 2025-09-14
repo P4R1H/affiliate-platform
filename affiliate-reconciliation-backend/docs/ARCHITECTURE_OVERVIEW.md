@@ -1,18 +1,7 @@
 # Architecture Overview
 
 ## 1. Purpose & Scope
-This document orients a new engineer in under 15 minutes to the## 7. Status & State Model (Simplified)
-| Status | Terminal? | Trust Event? | Retry Eligible | Alert Potential |
-|--------|-----------|--------------|---------------|-----------------|
-| MATCHED | Yes | PERFECT_MATCH | No | No |
-| DISCREPANCY_LOW | Yes | MINOR_DISCREPANCY | No | No |
-| DISCREPANCY_MEDIUM | Yes | MEDIUM_DISCREPANCY | No | No |
-| DISCREPANCY_HIGH | Yes | HIGH_DISCREPANCY | No | High Discrepancy Alert |
-| AFFILIATE_OVERCLAIMED | Yes | OVERCLAIM | No | Overclaim Alert |
-| INCOMPLETE_PLATFORM_DATA | No (1 extra attempt) | None | Yes | No |
-| MISSING_PLATFORM_DATA | No (until max/window) | None | Yes | Missing Data Alert |
-| UNVERIFIABLE | Yes | None | No | Data Quality Alert |
-| SKIPPED_SUSPENDED | Yes | None | No | System Health Alert |s domain model, moving parts, and the life of a submission from API ingest to reconciliation outcome, trust score shifts, and alert emission.
+This document orients a new engineer in under 15 minutes to the domain model, moving parts, and the life of a submission from API ingest to reconciliation outcome, trust score shifts, and alert emission.
 
 ## 2. High-Level Goals
 | Goal | Why It Matters | Realization |
@@ -57,38 +46,7 @@ This document orients a new engineer in under 15 minutes to the## 7. Status & St
                                v
                      SQLAlchemy ORM / SQLite (tests) | PostgreSQL (prod)
 ```
-```
-[ Client / Affiliate ]
-        |
-        v (REST JSON)
-+-----------------------+
-| FastAPI API Layer     |  <-- auth, validation, persistence of AffiliateReport
-| (lifespan management) |
-+-----------+-----------+
-            | enqueue (reconciliation job)
-            v
-      +-------------+            +--------------------+
-      | Priority    |  pop job   | Reconciliation     |
-      | Delay Queue +----------->| Worker Thread      |
-      +------+------+            +---------+----------+
-             ^                              |
-             | (scheduled retry)            | run_reconciliation(report_id)
-             |                              v
-        +----+------------------------------+-----------------------------+
-        | Reconciliation Engine: fetch -> classify -> trust -> alert -> log|
-        +----+-----------------+-------------------+----------------------+ 
-             |                 |                   |
-             v                 v                   v
-       PlatformFetcher   Trust Scoring       Alerting Service
-             |                 |                   |
-             v (adapters)      |                   |
-     app.integrations.*        |                   |
-             |                 |                   |
-             +-----------------+-------------------+
-                               |
-                               v
-                     SQLAlchemy ORM / SQLite (tests)
-```
+
 
 ## 4. Request → Outcome Sequence
 1. Affiliate POSTs `/submissions/` with claimed metrics.
