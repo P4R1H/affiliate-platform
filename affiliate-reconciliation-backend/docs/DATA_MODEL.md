@@ -32,15 +32,18 @@ Post --< PlatformReport (one per successful attempt with any data)
 | Field | Type | Notes |
 |-------|------|-------|
 | id | int | PK |
-| client_id | int | FK to Client (nullable for backward compatibility) |
 | name | str | Unique constraint |
 | email | str | Unique |
-| api_key | str | Bearer credential for submission endpoints |
-| trust_score | numeric(5,4) | 0–1 bounded float (config clamps) |
-| total_submissions | int | Total number of submissions made |
-| accurate_submissions | int | Number of accurate submissions |
+| discord_user_id | str | Unique (nullable) |
+| api_key | str | Bearer credential for submission endpoints (nullable) |
+| is_active | bool | Default: true |
+| role | enum | UserRole (AFFILIATE, CLIENT, ADMIN) |
+| client_id | int | FK to Client (nullable, required for CLIENT role) |
+| trust_score | numeric(3,2) | 0–1 bounded float (config clamps, nullable for CLIENT) |
+| last_trust_update | datetime | UTC timestamp (nullable) |
+| total_submissions | int | Total number of submissions made (default: 0) |
+| accurate_submissions | int | Number of accurate submissions (default: 0) |
 | created_at | datetime | UTC timestamp |
-| updated_at | datetime | UTC timestamp (auto-updated) |
 
 ### Campaign
 | Field | Type | Notes |
@@ -53,7 +56,7 @@ Post --< PlatformReport (one per successful attempt with any data)
 | end_date | date | Campaign end date (nullable) |
 | impression_cap | int | Maximum impressions allowed (nullable) |
 | cpm | numeric(10,2) | Cost per thousand impressions (nullable) |
-| status | enum | CampaignStatus (ACTIVE, PAUSED, COMPLETED) |
+| status | enum | CampaignStatus (ACTIVE, PAUSED, ENDED) |
 | created_at | datetime | UTC timestamp |
 
 ### Platform
@@ -94,7 +97,6 @@ Many-to-many relationship between Campaigns and Platforms.
 | description | str | Optional description of the post |
 | is_reconciled | bool | Boolean flag set when terminal reconciliation reached |
 | created_at | datetime | UTC timestamp |
-| updated_at | datetime | UTC timestamp (auto-updated) |
 | __table_args__ | Unique constraint on `campaign_id`, `platform_id`, `url`, `user_id` |
 
 ### AffiliateReport
@@ -118,26 +120,28 @@ One row per AffiliateReport capturing the latest classification + attempt metada
 |-------|------|-------|
 | id | int | PK |
 | affiliate_report_id | int | Unique FK to AffiliateReport |
+| platform_report_id | int | FK to latest PlatformReport (nullable) |
 | status | enum | ReconciliationStatus |
-| attempt_count | int | Incremented each run |
-| last_attempt_at | datetime | Timestamp of last attempt |
-| elapsed_hours | float | Derived (now - submitted_at) |
-| views_discrepancy | int | Signed difference (claimed - platform_adjusted) |
-| clicks_discrepancy | int | Signed difference (claimed - platform_adjusted) |
-| conversions_discrepancy | int | Signed difference (claimed - platform_adjusted) |
-| views_diff_pct | float | Percent diff (positive = overclaim, negative = underclaim) |
-| clicks_diff_pct | float | Percent diff (positive = overclaim, negative = underclaim) |
-| conversions_diff_pct | float | Percent diff (positive = overclaim, negative = underclaim) |
-| max_discrepancy_pct | float | Largest non-null diff for severity bucketing |
-| discrepancy_level | enum | LOW/MEDIUM/HIGH/CRITICAL (None for matched or partial) |
-| confidence_ratio | float | 0–1 fraction of metrics observed (partial data) |
-| missing_fields | json | JSON: {"fields": [..]} when partial/missing |
-| trust_delta | float | Float delta applied this attempt (nullable) |
-| platform_report_id | int | FK to latest PlatformReport (for convenience) |
+| discrepancy_level | enum | DiscrepancyLevel (LOW/MEDIUM/HIGH/CRITICAL, nullable) |
+| views_discrepancy | int | Signed difference (claimed - platform_adjusted, default: 0) |
+| clicks_discrepancy | int | Signed difference (claimed - platform_adjusted, default: 0) |
+| conversions_discrepancy | int | Signed difference (claimed - platform_adjusted, default: 0) |
+| views_diff_pct | numeric(5,2) | Percent diff (positive = overclaim, negative = underclaim, nullable) |
+| clicks_diff_pct | numeric(5,2) | Percent diff (positive = overclaim, negative = underclaim, nullable) |
+| conversions_diff_pct | numeric(5,2) | Percent diff (positive = overclaim, negative = underclaim, nullable) |
+| notes | str | Optional notes (nullable) |
+| processed_at | datetime | Timestamp when reconciliation was processed |
+| attempt_count | int | Incremented each run (default: 0) |
+| last_attempt_at | datetime | Timestamp of last attempt (nullable) |
 | scheduled_retry_at | datetime | Next attempt time (nullable) |
-| error_code | str | Adapter/circuit classification (fetch_error, rate_limited, etc.) |
-| error_message | str | Free-form diagnostic |
-| rate_limited | bool | Boolean toggle for fetch result |
+| max_discrepancy_pct | numeric(6,2) | Largest non-null diff for severity bucketing (nullable) |
+| confidence_ratio | numeric(4,3) | 0–1 fraction of metrics observed (partial data, nullable) |
+| missing_fields | json | JSON: {"fields": [..]} when partial/missing (nullable) |
+| rate_limited | bool | Boolean toggle for fetch result (default: false) |
+| elapsed_hours | numeric(6,2) | Derived (now - submitted_at, nullable) |
+| trust_delta | numeric(5,2) | Float delta applied this attempt (nullable) |
+| error_code | str | Adapter/circuit classification (fetch_error, rate_limited, etc., nullable) |
+| error_message | str | Free-form diagnostic (nullable) |
 
 ### PlatformReport
 Historical snapshot of platform metrics returned on a reconciliation attempt when at least one metric is present.
