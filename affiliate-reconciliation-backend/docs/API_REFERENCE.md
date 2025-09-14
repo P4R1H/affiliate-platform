@@ -10,10 +10,43 @@ http://localhost:8000/api/v1
 ## Authentication
 All API endpoints require authentication via Bearer token:
 ```
-Authorization: Bearer {affiliate_api_key}
+Authorization: Bearer {api_key}
 ```
 
 API keys are generated when creating a user account and can be retrieved via the `/users/me` endpoint.
+
+### Role-Based Access Control (RBAC)
+The platform implements role-based access control with the following user roles:
+
+- **AFFILIATE**: Can submit posts, view their own submissions, and access basic platform information
+- **CLIENT**: Can access reconciliation data, trigger reconciliations, and manage campaigns  
+- **ADMIN**: Full system access including user management and system administration
+
+Some endpoints require specific roles and will return `403 Forbidden` if accessed by users without sufficient permissions.
+
+Complete reference for all REST API endpoints in the Affiliate Reconciliation Platform.
+
+## Base URL
+```
+http://localhost:8000/api/v1
+```
+
+## Authentication
+All API endpoints require authentication via Bearer token:
+```
+Authorization: Bearer {api_key}
+```
+
+API keys are generated when creating a user account and can be retrieved via the `/users/me` endpoint.
+
+### Role-Based Access Control (RBAC)
+The platform implements role-based access control with the following user roles:
+
+- **AFFILIATE**: Can submit posts, view their own submissions, and access basic platform information
+- **CLIENT**: Can access reconciliation data, trigger reconciliations, and manage campaigns
+- **ADMIN**: Full system access including user management and system administration
+
+Some endpoints require specific roles and will return `403 Forbidden` if accessed by users without sufficient permissions.
 
 ## Response Format
 All API responses follow a consistent structure:
@@ -343,10 +376,14 @@ GET /api/v1/submissions/{post_id}/metrics
 
 ## Reconciliation
 
+**Access Control**: All reconciliation endpoints require **ADMIN** or **CLIENT** role.
+
 ### Trigger Manual Reconciliation
 ```http
 POST /api/v1/reconciliation/run
 ```
+
+**Required Role**: ADMIN or CLIENT
 
 **Request Body:**
 ```json
@@ -374,8 +411,10 @@ POST /api/v1/reconciliation/run
 GET /api/v1/reconciliation/results
 ```
 
+**Required Role**: ADMIN or CLIENT
+
 **Query Parameters:**
-- `affiliate_id`: Filter by affiliate
+- `user_id`: Filter by user (replaces affiliate_id)
 - `status`: Filter by reconciliation status
 - `discrepancy_level`: Filter by discrepancy level (LOW, MEDIUM, HIGH, CRITICAL)
 - `start_date`: Filter by date range (ISO format)
@@ -392,7 +431,7 @@ GET /api/v1/reconciliation/results
         "id": 1,
         "affiliate_report_id": 1,
         "post_id": 1,
-        "affiliate_name": "John Smith",
+        "user_name": "John Smith",
         "campaign_name": "Summer Sale 2024",
         "platform_name": "reddit",
         "status": "DISCREPANCY_LOW",
@@ -413,6 +452,105 @@ GET /api/v1/reconciliation/results
       },
       "avg_confidence_ratio": 0.95
     }
+  }
+}
+```
+
+### Get Reconciliation Queue Status
+```http
+GET /api/v1/reconciliation/queue
+```
+
+**Required Role**: ADMIN or CLIENT
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Queue snapshot",
+  "data": {
+    "snapshot": {
+      "depth": 5,
+      "jobs": [
+        {
+          "id": "job_123",
+          "affiliate_report_id": 1,
+          "priority": "high",
+          "created_at": "2024-01-15T10:30:00Z"
+        }
+      ]
+    },
+    "request_id": "req_abc123"
+  }
+}
+```
+
+### Get Specific Reconciliation Result
+```http
+GET /api/v1/reconciliation/logs/{affiliate_report_id}
+```
+
+**Required Role**: ADMIN or CLIENT
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "id": 1,
+    "affiliate_report_id": 1,
+    "platform_report_id": 2,
+    "status": "DISCREPANCY_LOW",
+    "discrepancy_level": "LOW",
+    "views_discrepancy": 150,
+    "clicks_discrepancy": 25,
+    "conversions_discrepancy": 3,
+    "views_diff_pct": 0.84,
+    "clicks_diff_pct": 5.05,
+    "conversions_diff_pct": 10.0,
+    "notes": "Minor discrepancy detected",
+    "processed_at": "2024-01-15T10:35:00Z",
+    "affiliate_metrics": {
+      "views": 18000,
+      "clicks": 520,
+      "conversions": 28,
+      "post_url": "https://reddit.com/r/technology/posts/abc123",
+      "platform_name": "reddit",
+      "timestamp": "2024-01-15T10:30:00Z",
+      "source": "user_claim"
+    },
+    "platform_metrics": {
+      "views": 17850,
+      "clicks": 495,
+      "conversions": 26,
+      "post_url": "https://reddit.com/r/technology/posts/abc123",
+      "platform_name": "reddit",
+      "timestamp": "2024-01-15T10:35:00Z",
+      "source": "platform_api"
+    },
+    "discrepancies": [
+      {
+        "metric": "views",
+        "claimed": 18000,
+        "observed": 17850,
+        "absolute_diff": 150,
+        "pct_diff": 0.84
+      }
+    ],
+    "max_discrepancy_pct": 10.0,
+    "trust_change": {
+      "event": "minor_discrepancy",
+      "previous": 0.85,
+      "new": 0.83,
+      "delta": -0.02
+    },
+    "job": {
+      "attempt_count": 1,
+      "max_attempts": 3,
+      "next_retry_at": null,
+      "queue_priority": "normal"
+    },
+    "meta": {}
   }
 }
 ```
@@ -695,7 +833,7 @@ DELETE /api/v1/clients/{client_id}
 |------|-------------|
 | `VALIDATION_ERROR` | Request validation failed |
 | `AUTHENTICATION_REQUIRED` | Missing or invalid API key |
-| `AUTHORIZATION_FAILED` | Insufficient permissions |
+| `AUTHORIZATION_FAILED` | Insufficient permissions for the requested operation |
 | `RESOURCE_NOT_FOUND` | Requested resource doesn't exist |
 | `DUPLICATE_SUBMISSION` | Post already submitted for this campaign/platform |
 | `CAMPAIGN_PLATFORM_MISMATCH` | Platform not associated with campaign |
@@ -705,9 +843,10 @@ DELETE /api/v1/clients/{client_id}
 
 ## Rate Limits
 
-- **Submissions**: 100 per hour per affiliate
+- **Submissions**: 100 per hour per user
 - **General API**: 1000 requests per hour per API key
-- **Reconciliation triggers**: 10 per minute per affiliate
+- **Reconciliation triggers**: 10 per minute per user (ADMIN/CLIENT roles only)
+- **Reconciliation queries**: 100 per minute per user (ADMIN/CLIENT roles only)
 
 Rate limit headers are included in all responses:
 ```
@@ -731,9 +870,10 @@ The platform will support webhooks for real-time notifications:
 ```python
 from affiliate_platform import Client
 
-client = Client(api_key="aff_your_api_key")
+# Initialize client with API key (works for all user roles)
+client = Client(api_key="your_api_key")
 
-# Submit new post
+# Submit new post (AFFILIATE role)
 post = client.submissions.create(
     campaign_id=1,
     platform_id=1,
@@ -743,9 +883,12 @@ post = client.submissions.create(
     claimed_conversions=8
 )
 
-# Check reconciliation status
+# Check reconciliation status (ADMIN/CLIENT roles only)
 status = client.reconciliation.get_status(post.id)
 print(f"Status: {status.reconciliation_status}")
+
+# Trigger reconciliation (ADMIN/CLIENT roles only)
+client.reconciliation.trigger(post_id=post.id, force_reprocess=True)
 ```
 
 ### JavaScript SDK Usage
@@ -753,11 +896,11 @@ print(f"Status: {status.reconciliation_status}")
 import { AffiliateClient } from '@affiliate-platform/sdk';
 
 const client = new AffiliateClient({
-  apiKey: 'aff_your_api_key',
+  apiKey: 'your_api_key',
   baseURL: 'https://api.affiliate-platform.com/v1'
 });
 
-// Submit new post
+// Submit new post (AFFILIATE role)
 const post = await client.submissions.create({
   campaignId: 1,
   platformId: 1,
@@ -767,10 +910,22 @@ const post = await client.submissions.create({
   claimedConversions: 8
 });
 
-// Get submission history
+// Get submission history (AFFILIATE role)
 const history = await client.submissions.getHistory({
   limit: 20,
   status: 'MATCHED'
+});
+
+// Trigger reconciliation (ADMIN/CLIENT roles only)
+await client.reconciliation.trigger({
+  postId: post.id,
+  forceReprocess: true
+});
+
+// Get reconciliation results (ADMIN/CLIENT roles only)
+const results = await client.reconciliation.getResults({
+  limit: 50,
+  status: 'DISCREPANCY_HIGH'
 });
 ```
 
