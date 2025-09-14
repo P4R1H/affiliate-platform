@@ -26,12 +26,6 @@ Core responsibilities:
 
 Status: A lean but production-aligned core—no speculative abstractions, only primitives required by the brief + targeted integrity & governance improvements.
 
-# Affiliate Reconciliation Platform
-
-Fast, extensible system for ingesting affiliate‑reported performance metrics, reconciling them against platform truth, surfacing discrepancies, and tracking affiliate trust.
-
-</div>
-
 ## 1. High‑Level Overview
 This project implements an end‑to‑end reconciliation workflow:
 * Accept submissions (API today; Discord ingestion schema-ready)
@@ -122,14 +116,14 @@ MOCK_FAILURE_RATE=0.05
 ## 8. Current Capability Highlights
 | Capability | Status |
 |------------|--------|
-| Multi-platform mock adapters | ✅ |
-| Priority job queue + worker | ✅ |
-| Reconciliation + discrepancy logging | ✅ |
+| Multi-platform mock adapters (Instagram, Reddit, TikTok, X, YouTube) | ✅ |
+| Priority job queue + worker threads | ✅ |
+| Reconciliation engine + discrepancy detection | ✅ |
 | Trust scoring updates per reconciliation | ✅ |
-| Alert scaffolding (threshold-driven) | ✅ |
+| Alert scaffolding (threshold-driven notifications) | ✅ |
 | Circuit breaker & backoff utilities | ✅ |
-| Structured JSON logging | ✅ |
-| RBAC (admin campaign creation) | ✅ |
+| Structured JSON logging with correlation IDs | ✅ |
+| RBAC (admin campaign creation, role-based access) | ✅ |
 | Observability extensions (metrics, webhooks) | 🚧 Planned |
 
 ## 9. Extending

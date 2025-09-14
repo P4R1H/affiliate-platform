@@ -51,26 +51,38 @@ The platform uses multiple configuration sources in order of precedence:
 | `DISABLE_WORKER` | `False` | Disable background reconciliation worker |
 | `ENABLE_DEBUG_ENDPOINTS` | `False` | Enable debug/admin endpoints |
 
+### Discord Bot Settings
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ENABLE_DISCORD_BOT` | `false` | Enable Discord bot integration |
+| `DISCORD_BOT_TOKEN` | (none) | Discord bot authentication token |
+| `DISCORD_COMMAND_GUILDS` | (empty) | Comma-separated guild IDs for faster command registration |
+| `API_BASE_URL` | `http://localhost:8000/api/v1` | Base URL for the FastAPI service |
+| `BOT_INTERNAL_TOKEN` | (none) | Internal token for bot-submitted requests |
+
 ## Application Configuration (`app/config.py`)
 
 ### Reconciliation Engine Settings
 
 ```python
 RECONCILIATION_SETTINGS = {
-    # Discrepancy tolerance thresholds (percentages)
-    "base_tolerance": 5.0,           # Perfect match threshold
-    "low_threshold": 15.0,           # Low discrepancy threshold  
-    "medium_threshold": 30.0,        # Medium discrepancy threshold
-    "high_threshold": 50.0,          # High discrepancy threshold
-    "overclaim_threshold": 50.0,     # Overclaim detection threshold
-    "critical_threshold": 100.0,     # Critical overclaim threshold
+    # Base tolerance BEFORE growth allowance. Diff within this is a match.
+    "base_tolerance_pct": 0.05,  # 5%
     
-    # Growth allowance (platform metrics may grow after submission)
-    "growth_per_hour": 10,           # Views/hour growth allowance
-    "growth_cap_hours": 24,          # Maximum hours to apply growth
+    # Discrepancy tier thresholds (upper bounds). > medium_max => HIGH.
+    "discrepancy_tiers": {
+        "low_max": 0.10,     # 10%
+        "medium_max": 0.20,  # 20%
+    },
     
-    # Confidence scoring
-    "min_confidence_for_full_classification": 0.5  # Minimum confidence for classification
+    # Overclaim threshold: affiliate significantly above platform.
+    "overclaim_threshold_pct": 0.20,   # 20%
+    "overclaim_critical_pct": 0.50,    # 50% triggers CRITICAL alert
+    
+    # Allowance for organic growth between submission & fetch.
+    "growth_per_hour_pct": 0.10,       # 10% per hour
+    "growth_cap_hours": 24,            # Cap growth adjustment window
 }
 ```
 
@@ -81,21 +93,21 @@ TRUST_SCORING = {
     # Trust score boundaries
     "min_score": 0.0,                # Minimum possible trust score
     "max_score": 1.0,                # Maximum possible trust score
-    "default_score": 0.5,            # Default score for new affiliates
     
-    # Trust event deltas
+    # Trust event deltas (additive adjustments, not percentages)
     "events": {
-        "PERFECT_MATCH": 0.01,       # Bonus for perfect match
-        "MINOR_DISCREPANCY": -0.01,  # Small penalty for minor issues
-        "MEDIUM_DISCREPANCY": -0.03, # Medium penalty
-        "HIGH_DISCREPANCY": -0.05,   # High penalty
-        "OVERCLAIM": -0.10           # Severe penalty for overclaiming
+        "perfect_match": +0.01,       # Bonus for perfect match
+        "minor_discrepancy": -0.01,  # Small penalty for minor issues
+        "medium_discrepancy": -0.03, # Medium penalty
+        "high_discrepancy": -0.05,   # High penalty
+        "overclaim": -0.10,          # Severe penalty for overclaiming
+        "impossible_submission": -0.15  # Critical penalty for impossible claims
     },
     
-    # Trust buckets for prioritization
-    "reduced_frequency_threshold": 0.8,    # High trust threshold
-    "increased_monitoring_threshold": 0.6, # Normal threshold  
-    "manual_review_threshold": 0.3         # Low trust threshold
+    # Thresholds for operational behaviors
+    "reduced_frequency_threshold": 0.75,    # High trust threshold
+    "increased_monitoring_threshold": 0.50, # Normal threshold  
+    "manual_review_threshold": 0.25         # Low trust threshold
 }
 ```
 
@@ -148,11 +160,24 @@ ALERTING_SETTINGS = {
 
 ```python
 DATA_QUALITY_SETTINGS = {
-    # Suspicion detection thresholds
-    "max_reasonable_ctr": 0.05,      # Maximum reasonable click-through rate (5%)
-    "max_reasonable_cvr": 0.02,      # Maximum reasonable conversion rate (2%)
-    "large_claim_threshold": 30000,   # Views threshold for "large claim" flag
-    "growth_rate_threshold": 2.0     # Maximum reasonable growth rate multiplier
+    # Ratio thresholds for suspicious activity detection
+    "max_ctr_pct": 0.35,              # clicks/views > 35% suspicious
+    "max_cvr_pct": 0.60,              # conversions/clicks > 60% suspicious
+    
+    # Growth/spike detection thresholds
+    "max_views_growth_pct": 5.0,      # >500% vs previous report views
+    "max_clicks_growth_pct": 5.0,     # >500% vs previous report clicks
+    "max_conversions_growth_pct": 5.0,# >500% vs previous report conversions
+    
+    # Evidence requirement thresholds
+    "evidence_required_views": 50000, # Require evidence for claims >50k views
+    
+    # Non-monotonic allowances (allow small negative noise)
+    "monotonic_tolerance": 0.01,      # 1% tolerance for small decreases
+    
+    # Minimum baseline to evaluate certain ratios
+    "min_views_for_ctr": 100,         # Minimum views to evaluate CTR
+    "min_clicks_for_cvr": 20          # Minimum clicks to evaluate CVR
 }
 ```
 
@@ -165,6 +190,19 @@ CIRCUIT_BREAKER_SETTINGS = {
     "recovery_timeout": 60,          # Seconds before attempting recovery
     "open_cooldown_seconds": 300,    # Cooldown period when circuit is open
     "half_open_probe_count": 3       # Test calls when half-open
+}
+```
+
+### Backoff Policy Configuration
+
+```python
+BACKOFF_POLICY = {
+    # Exponential backoff settings for failed operations
+    "base_seconds": 1,               # Base delay in seconds
+    "factor": 2,                     # Exponential factor
+    "max_seconds": 60,               # Maximum delay
+    "max_attempts": 3,               # Maximum retry attempts
+    "jitter_pct": 0.10               # Random jitter (+/-10%)
 }
 ```
 
@@ -298,6 +336,13 @@ MOCK_FAILURE_RATE=0.1
 # CORS for frontend development
 CORS_ORIGINS=http://localhost:3000,http://localhost:8080
 
+# Discord bot (optional)
+ENABLE_DISCORD_BOT=true
+DISCORD_BOT_TOKEN=your_dev_bot_token
+DISCORD_COMMAND_GUILDS=123456789012345678
+API_BASE_URL=http://localhost:8000/api/v1
+BOT_INTERNAL_TOKEN=dev-internal-token
+
 # Secret key (generate new for production)
 SECRET_KEY=dev-secret-key-change-in-production
 ```
@@ -323,6 +368,12 @@ REDDIT_CLIENT_SECRET=your_reddit_client_secret
 INSTAGRAM_ACCESS_TOKEN=your_instagram_token
 YOUTUBE_API_KEY=your_youtube_api_key
 TWITTER_BEARER_TOKEN=your_twitter_token
+
+# Discord bot (optional)
+ENABLE_DISCORD_BOT=true
+DISCORD_BOT_TOKEN=your_prod_bot_token
+API_BASE_URL=https://yourdomain.com/api/v1
+BOT_INTERNAL_TOKEN=your-secure-internal-token
 
 # Production settings
 MOCK_FAILURE_RATE=0.0

@@ -27,13 +27,13 @@ The platform uses a modular adapter pattern to support multiple advertising plat
 
 ### Supported Platforms
 
-| Platform | Status | Metrics Supported | Authentication |
-|----------|--------|-------------------|----------------|
-| Reddit | Mock (ready for real API) | views, clicks, conversions | Client credentials |
-| Instagram | Mock (ready for real API) | impressions, clicks, conversions | Access token |
-| TikTok | Mock (ready for real API) | plays, clicks, conversions | Business API |
-| YouTube | Mock (ready for real API) | views, clicks, subscribers | API key |
-| X/Twitter | Mock (ready for real API) | impressions, clicks, bookmarks | Bearer token |
+| Platform | Status | Metrics Supported | Authentication | Link Processing |
+|----------|--------|-------------------|----------------|----------------|
+| Reddit | Mock (with real link normalization) | views, clicks, conversions, likes, comments, shares | Client credentials | Real API normalization |
+| Instagram | Mock (ready for real API) | impressions, clicks, conversions, likes, comments, shares | Access token | Basic URL cleaning |
+| TikTok | Mock (ready for real API) | plays, clicks, conversions, likes, comments, shares | Business API | Basic URL cleaning |
+| YouTube | Mock (ready for real API) | views, clicks, conversions, likes, comments | API key | Basic URL cleaning |
+| X/Twitter | Mock (ready for real API) | impressions, clicks, conversions, likes, comments, shares | Bearer token | Basic URL cleaning |
 
 ### Why Mock Implementations?
 
@@ -46,8 +46,13 @@ All current implementations are mock-based for the following reasons:
 
 Each mock implementation includes:
 - Realistic metric generation with platform-specific patterns
-- Simulated API latency and failure rates
+- Simulated API latency and failure rates (5% failure rate)
 - Proper error handling and retry logic
+- **Reddit**: Real API link normalization for share links
+- **Instagram**: Proper impressions ≥ reach relationship
+- **TikTok**: Viral content simulation with age-based decay
+- **YouTube**: Subscriber conversion rates based on content type
+- **X/Twitter**: Tweet impression patterns based on follower count
 - Complete data transformation to unified format
 
 ## Integration Interface
@@ -88,23 +93,163 @@ class PlatformAPIResponse(BaseModel):
     platform_name: str
     
     # Core metrics (standardized across platforms)
-    views: Optional[int] = None
-    clicks: Optional[int] = None  
-    conversions: Optional[int] = None
-    spend: Optional[float] = None
+    views: int = Field(ge=0, description="Views/impressions/plays")
+    clicks: int = Field(ge=0, description="Clicks/taps on post or links") 
+    conversions: int = Field(ge=0, description="Actions taken (follows, saves, etc.)")
+    spend: Optional[float] = Field(None, ge=0, description="Ad spend if applicable")
     
     # Engagement metrics (platform-specific)
-    likes: Optional[int] = None
-    comments: Optional[int] = None
-    shares: Optional[int] = None
+    likes: Optional[int] = Field(None, ge=0, description="Likes/reactions")
+    comments: Optional[int] = Field(None, ge=0, description="Comments/replies")
+    shares: Optional[int] = Field(None, ge=0, description="Shares/retweets")
     
     # Metadata
-    raw_response: Dict[str, Any]  # Original platform response
-    api_version: Optional[str] = None
-    rate_limit_remaining: Optional[int] = None
-    cache_hit: bool = False
     fetched_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    api_version: Optional[str] = Field(None, description="API version used")
+    rate_limit_remaining: Optional[int] = Field(None, description="API rate limit remaining")
+    cache_hit: bool = Field(False, description="Whether data came from cache")
+    raw_response: Dict[str, Any]  # Original platform response
+    
+    def to_unified_metrics(self) -> UnifiedMetrics:
+        """Convert to unified metrics format for reconciliation."""
+        return UnifiedMetrics(
+            views=self.views,
+            clicks=self.clicks,
+            conversions=self.conversions,
+            post_url=self.post_url,
+            platform_name=self.platform_name,
+            timestamp=self.fetched_at,
+            source="platform_api"
+        )
 ```
+
+## Error Handling & Platform Errors
+
+All integrations include comprehensive error handling with structured error reporting:
+
+```python
+class PlatformError(BaseModel):
+    """Schema for platform integration errors."""
+    platform_name: str
+    error_type: str = Field(description="API_ERROR, RATE_LIMITED, NOT_FOUND, etc.")
+    error_message: str
+    post_url: str
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    retry_after: Optional[int] = Field(None, description="Seconds to wait before retry")
+```
+
+**Error Types**:
+- `API_ERROR`: General API failures
+- `RATE_LIMITED`: Rate limit exceeded
+- `NOT_FOUND`: Post/content not found
+- `AUTH_FAILED`: Authentication/authorization issues
+- `TIMEOUT`: Request timeout
+- `INVALID_RESPONSE`: Malformed API response
+
+**Error Handling Patterns**:
+```python
+try:
+    # Platform API call
+    response = await session.get(api_url)
+    
+    if response.status == 429:
+        raise PlatformError(
+            platform_name="reddit",
+            error_type="RATE_LIMITED",
+            error_message="Rate limit exceeded",
+            post_url=post_url,
+            retry_after=60
+        )
+        
+except asyncio.TimeoutError:
+    raise PlatformError(
+        platform_name="reddit", 
+        error_type="TIMEOUT",
+        error_message="Request timed out",
+        post_url=post_url
+        )
+```
+
+## Unified Metrics Conversion
+
+All `PlatformAPIResponse` objects can be converted to the internal `UnifiedMetrics` format for reconciliation processing:
+
+```python
+# Automatic conversion
+platform_response = await integration.fetch_post_metrics(post_url, config)
+unified_metrics = platform_response.to_unified_metrics()
+
+# UnifiedMetrics schema
+class UnifiedMetrics(BaseModel):
+    """Internal metrics format for reconciliation engine."""
+    
+    views: int
+    clicks: int
+    conversions: int
+    post_url: str
+    platform_name: str
+    timestamp: datetime
+    source: str = "platform_api"  # or "user_submission"
+```
+
+**Conversion Benefits**:
+- Standardized format for all downstream processing
+- Consistent timestamp handling
+- Source attribution for debugging
+- Easy integration with reconciliation engine
+
+## Link Processing & NormalizationThe platform includes sophisticated URL processing capabilities to handle various link formats and normalize them for consistent processing.
+
+### Reddit Link Normalization
+
+**File**: `app/integrations/reddit.py`
+
+Reddit has a unique challenge with share links that need to be resolved to canonical post URLs. The integration includes real Reddit API calls for link normalization:
+
+```python
+async def normalize_reddit_link(url: str) -> str:
+    """
+    Normalize Reddit share links to canonical post URLs using real Reddit API.
+    
+    Examples:
+        https://reddit.com/r/test/s/abc123 -> https://reddit.com/r/test/comments/real_id/title
+        https://reddit.com/r/test/comments/123/title -> https://reddit.com/r/test/comments/123/title (unchanged)
+    """
+```
+
+**Features**:
+- Resolves Reddit share links (`/s/` format) to canonical URLs
+- Uses real Reddit JSON API (no authentication required)
+- Handles both `reddit.com` and `redd.it` short links
+- Includes proper error handling and timeout management
+
+### General URL Processing
+
+**File**: `app/utils/link_processing.py`
+
+All URLs go through a standardized processing pipeline:
+
+```python
+async def process_post_url(url: str, expected_platform: str) -> tuple[str, str]:
+    """
+    Complete URL processing pipeline: clean, detect, validate, normalize.
+    
+    Steps:
+    1. Clean URL (remove tracking parameters, fragments)
+    2. Validate URL format
+    3. Detect platform from URL patterns
+    4. Validate platform match with expected platform
+    5. Apply platform-specific normalization (Reddit only)
+    """
+```
+
+**Supported Platforms for Detection**:
+- Reddit (`reddit.com`, `redd.it`, `old.reddit.com`)
+- Instagram (`instagram.com`, `instagr.am`)
+- Meta/Facebook (`facebook.com`, `fb.com`)
+- TikTok (`tiktok.com`, `vm.tiktok.com`)
+- YouTube (`youtube.com`, `youtu.be`)
+- X/Twitter (`twitter.com`, `x.com`, `t.co`)
 
 ## Platform-Specific Implementations
 
@@ -112,33 +257,25 @@ class PlatformAPIResponse(BaseModel):
 
 **File**: `app/integrations/reddit.py`
 
+**Features**:
+- **Real Link Normalization**: Uses Reddit's public JSON API to resolve share links
+- **Sophisticated Mock Metrics**: Realistic engagement patterns with failure simulation
+- **Comprehensive Error Handling**: Timeout, rate limiting, and API error management
+
 **Metrics Mapping**:
 - `views` → Post upvotes (Reddit doesn't provide view counts)
 - `clicks` → Comment count (proxy for engagement)
-- `conversions` → Award count
+- `conversions` → Total awards received
+- `likes` → Upvotes
+- `comments` → Comment count
+- `shares` → Estimated shares (upvotes × 0.02 heuristic)
 
-**Mock Implementation**:
-```python
-async def fetch_post_metrics(self, post_url: str, config: Optional[Dict[str, Any]] = None) -> Optional[PlatformAPIResponse]:
-    # Simulate realistic Reddit engagement patterns
-    base_upvotes = random.randint(50, 10000)
-    
-    raw_reddit_data = RedditAPIResponse(
-        ups=base_upvotes,
-        downs=int(base_upvotes * random.uniform(0.05, 0.3)),
-        num_comments=int(base_upvotes * random.uniform(0.1, 0.8)),
-        total_awards_received=int(base_upvotes * random.uniform(0.001, 0.05))
-    )
-    
-    return PlatformAPIResponse(
-        post_url=post_url,
-        platform_name="reddit",
-        raw_response=raw_reddit_data.dict(),
-        views=raw_reddit_data.ups,
-        clicks=raw_reddit_data.num_comments,
-        conversions=raw_reddit_data.total_awards_received
-    )
-```
+**Mock Implementation Features**:
+- Base engagement between 100-5000 upvotes
+- Realistic upvote ratios (0.75-0.98)
+- Comment ratios based on engagement (0.02-0.08)
+- Award distribution (0-15 total awards)
+- 5% simulated failure rate
 
 **Real Implementation Template**:
 ```python
@@ -168,15 +305,26 @@ async def fetch_reddit_metrics_real(post_url: str, config: Dict[str, Any]) -> Op
 
 **File**: `app/integrations/instagram.py`
 
+**Features**:
+- **Realistic Engagement Simulation**: Proper impressions ≥ reach relationship
+- **Content Type Variations**: Different patterns for posts vs stories/reels
+- **Geographic and Demographic Factors**: Regional engagement variations
+
 **Metrics Mapping**:
-- `views` → Impressions
-- `clicks` → Website clicks + profile visits
-- `conversions` → Saves + profile visits
+- `views` → Impressions (always ≥ reach by definition)
+- `clicks` → Website clicks
+- `conversions` → Saves + profile visits (engagement actions)
+- `likes` → Like count
+- `comments` → Comment count
+- `shares` → Estimated shares (likes × 0.15 heuristic)
 
 **Mock Implementation Features**:
-- Realistic engagement rates based on follower count
-- Proper impression/reach relationship (impressions ≥ reach)
-- Story vs post metric variations
+- Base reach between 1000-20000
+- Impressions = reach × (1.05-1.6) to maintain realistic ratios
+- Like ratios (0.03-0.12 of reach)
+- Comment ratios (0.005-0.03 of reach)
+- Optional play_count for video content
+- 5% simulated failure rate
 
 **Real Implementation Template**:
 ```python
@@ -202,15 +350,25 @@ async def fetch_instagram_metrics_real(post_url: str, config: Dict[str, Any]) ->
 
 **File**: `app/integrations/tiktok.py`
 
+**Features**:
+- **Viral Content Simulation**: Some videos get massive play counts
+- **Age-Based Engagement Decay**: Older content gets less engagement
+- **Regional Variations**: Different performance patterns by region
+
 **Metrics Mapping**:
-- `views` → Play count
+- `views` → Play count (primary metric)
 - `clicks` → Profile views
 - `conversions` → Share count
+- `likes` → Like count
+- `comments` → Comment count
+- `shares` → Share count
 
 **Mock Implementation Features**:
-- Viral content simulation (some videos get massive play counts)
-- Age-based engagement decay
-- Regional variation in performance
+- Play counts from 1000-50000 (some viral content up to 500k+)
+- Like ratios (0.02-0.08 of plays)
+- Comment ratios (0.001-0.005 of plays)
+- Share ratios (0.005-0.02 of plays)
+- 5% simulated failure rate
 
 **Real Implementation Template**:
 ```python
@@ -234,15 +392,25 @@ async def fetch_tiktok_metrics_real(post_url: str, config: Dict[str, Any]) -> Op
 
 **File**: `app/integrations/youtube.py`
 
+**Features**:
+- **Content Type Variations**: Different engagement patterns by video type
+- **Subscriber Conversion Modeling**: Realistic subscriber gain rates
+- **Age-Based Performance**: Video age affects growth patterns
+
 **Metrics Mapping**:
 - `views` → View count
-- `clicks` → View count × CTR
+- `clicks` → Estimated clicks (views × CTR)
 - `conversions` → Subscriber gains
+- `likes` → Like count
+- `comments` → Comment count
 
 **Mock Implementation Features**:
-- Video age affects growth patterns
-- Subscriber conversion rates based on content type
-- Realistic like/dislike ratios
+- View counts from 1000-50000
+- Like ratios (0.01-0.05 of views)
+- Comment ratios (0.001-0.01 of views)
+- Subscriber conversion rates (0.001-0.005 of views)
+- Realistic CTR ranges (0.02-0.12)
+- 5% simulated failure rate
 
 **Real Implementation Template**:
 ```python
@@ -269,15 +437,26 @@ async def fetch_youtube_metrics_real(post_url: str, config: Dict[str, Any]) -> O
 
 **File**: `app/integrations/x.py`
 
+**Features**:
+- **Follower-Based Engagement**: Impression patterns based on follower count
+- **Content Type Variations**: Different engagement for text vs media tweets
+- **Thread vs Single Tweet**: Different patterns for thread components
+
 **Metrics Mapping**:
 - `views` → Impression count
 - `clicks` → URL clicks + profile clicks
-- `conversions` → Bookmarks
+- `conversions` → Bookmark count
+- `likes` → Like count
+- `comments` → Reply count
+- `shares` → Retweet count
 
 **Mock Implementation Features**:
-- Tweet impression patterns based on follower count
-- Realistic engagement rates for different content types
-- Thread vs single tweet variations
+- Impression counts from 1000-50000 based on follower simulation
+- Like ratios (0.005-0.03 of impressions)
+- Reply ratios (0.001-0.01 of impressions)
+- Retweet ratios (0.01-0.05 of impressions)
+- Bookmark ratios (0.002-0.01 of impressions)
+- 5% simulated failure rate
 
 **Real Implementation Template**:
 ```python
@@ -361,6 +540,8 @@ Add the new integration to `app/integrations/platforms.py`:
 from .linkedin import LinkedInIntegration
 
 class PlatformIntegrationService:
+    """Main service for managing all platform integrations."""
+    
     def __init__(self):
         self.integrations = {
             "reddit": RedditIntegration(),
@@ -368,6 +549,7 @@ class PlatformIntegrationService:
             "tiktok": TiktokIntegration(),
             "youtube": YoutubeIntegration(),
             "x": XIntegration(),
+            "twitter": XIntegration(),  # Alias for backward compatibility
             "linkedin": LinkedInIntegration(),  # Add new integration
         }
 ```
@@ -443,6 +625,7 @@ YOUTUBE_API_KEY=your_youtube_api_key
 
 # X/Twitter
 TWITTER_BEARER_TOKEN=your_twitter_bearer_token
+X_BEARER_TOKEN=your_x_bearer_token  # Alternative naming
 ```
 
 ## Error Handling
@@ -492,6 +675,16 @@ def test_linkedin_integration():
     assert response is not None
     assert response.platform_name == "linkedin"
     assert response.views > 0
+
+def test_twitter_alias():
+    # Test that 'twitter' platform name works
+    service = PlatformIntegrationService()
+    response = await service.fetch_post_metrics(
+        "twitter", 
+        "https://twitter.com/user/status/123",
+        config={"bearer_token": "test_token"}
+    )
+    assert response.platform_name == "x"  # Internal name
 ```
 
 ### Integration Testing

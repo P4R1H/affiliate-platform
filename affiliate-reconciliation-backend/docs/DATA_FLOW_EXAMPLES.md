@@ -29,7 +29,7 @@ Content-Type: application/json
 {
   "campaign_id": 1,
   "platform_id": 1,
-  "url": "https://reddit.com/r/technology/posts/abc123",
+  "post_url": "https://reddit.com/r/technology/posts/abc123",
   "title": "Amazing new AI tool for developers",
   "description": "Review of the latest AI coding assistant",
   "claimed_views": 5000,
@@ -48,17 +48,13 @@ Content-Type: application/json
 ```json
 {
   "success": true,
-  "message": "Post submitted successfully",
+  "message": "Post submitted successfully. Reconciliation job scheduled.",
   "data": {
     "post_id": 101,
     "affiliate_report_id": 201,
-    "campaign_id": 1,
-    "platform_id": 1,
-    "url": "https://reddit.com/r/technology/posts/abc123",
-    "status": "PENDING",
-    "reconciliation_queued": true,
-    "priority": "normal",
-    "submitted_at": "2024-01-15T10:30:00Z"
+    "processed_url": "https://reddit.com/r/technology/posts/abc123",
+    "url_was_modified": false,
+    "estimated_processing_time": "2-5 minutes"
   },
   "timestamp": "2024-01-15T10:30:00Z"
 }
@@ -76,8 +72,8 @@ VALUES (101, 1, 5, 1, 'https://reddit.com/r/technology/posts/abc123', 'Amazing n
 
 *affiliate_reports table:*
 ```sql
-INSERT INTO affiliate_reports (id, post_id, claimed_views, claimed_clicks, claimed_conversions, evidence_data, submission_method, status, submitted_at)
-VALUES (201, 101, 5000, 150, 8, '{"submission_time": "2024-01-15T10:00:00Z", "peak_activity_window": "2024-01-15T15:00-17:00", "notes": "Posted during optimal engagement hours"}', 'API', 'PENDING', '2024-01-15 10:30:00');
+INSERT INTO affiliate_reports (id, post_id, claimed_views, claimed_clicks, claimed_conversions, evidence_data, suspicion_flags, submission_method, status, submitted_at)
+VALUES (201, 101, 5000, 150, 8, '{"submission_time": "2024-01-15T10:00:00Z", "peak_activity_window": "2024-01-15T15:00-17:00", "notes": "Posted during optimal engagement hours"}', '{}', 'API', 'PENDING', '2024-01-15 10:30:00');
 ```
 
 ### Step 3: Job Queue Processing
@@ -156,7 +152,7 @@ VALUES (301, 101, 1, 4950, 145, 8, '{"ups": 4950, "downs": 125, "num_comments": 
 - Max discrepancy: 3.4% (within base tolerance of 5%)
 - Status: **MATCHED**
 - Discrepancy level: None
-- Trust event: **PERFECT_MATCH**
+- Trust event: **perfect_match**
 
 ### Step 7: Trust Score Update
 
@@ -166,7 +162,7 @@ VALUES (301, 101, 1, 4950, 145, 8, '{"ups": 4950, "downs": 125, "num_comments": 
 - Total submissions: 58
 
 **Trust scoring calculation:**
-- Event: PERFECT_MATCH
+- Event: perfect_match
 - Delta: +0.01 (from configuration)
 - New trust score: min(0.78 + 0.01, 1.0) = 0.79
 
@@ -220,7 +216,7 @@ Authorization: Bearer aff_john_smith_key
       "last_attempt_at": "2024-01-15T10:30:03Z"
     },
     "trust_impact": {
-      "event": "PERFECT_MATCH",
+      "event": "perfect_match",
       "previous_score": 0.78,
       "new_score": 0.79,
       "delta": 0.01
@@ -244,7 +240,7 @@ Content-Type: application/json
 {
   "campaign_id": 1,
   "platform_id": 2,
-  "url": "https://instagram.com/p/aBc123DeF/",
+  "post_url": "https://instagram.com/p/aBc123DeF/",
   "title": "Viral product showcase",
   "claimed_views": 50000,
   "claimed_clicks": 2500,
@@ -309,7 +305,7 @@ During validation, the system detects unusually high conversion rate (2.5%) and 
 - Status: **AFFILIATE_OVERCLAIMED**
 - Discrepancy level: **CRITICAL**
 - Max discrepancy: 1289%
-- Trust event: **OVERCLAIM**
+- Trust event: **overclaim**
 
 ### Step 5: Trust Score Impact
 
@@ -370,7 +366,7 @@ This example shows how the system handles temporary platform unavailability.
 {
   "campaign_id": 2,
   "platform_id": 3,
-  "url": "https://tiktok.com/@user/video/1234567890",
+  "post_url": "https://tiktok.com/@user/video/1234567890",
   "claimed_views": 25000,
   "claimed_clicks": 300,
   "claimed_conversions": 15
@@ -419,7 +415,7 @@ WHERE affiliate_report_id = 203;
 **Second attempt succeeds:**
 - Status updated: **DISCREPANCY_LOW**
 - Views discrepancy: 25000 vs 24500 = 2%
-- Trust event: **MINOR_DISCREPANCY**
+- Trust event: **minor_discrepancy**
 - No further retries needed
 
 ## Example 4: Discord Integration Flow
@@ -446,7 +442,7 @@ Evidence: https://discord.com/attachments/screenshot.png
 submission_data = {
     "campaign_id": find_campaign_by_name("Summer Sale 2024"),
     "platform_id": find_platform_by_url("youtube.com"),
-    "url": "https://youtube.com/watch?v=abc123",
+    "post_url": "https://youtube.com/watch?v=abc123",
     "claimed_views": 15000,
     "claimed_clicks": 450,
     "claimed_conversions": 22,
