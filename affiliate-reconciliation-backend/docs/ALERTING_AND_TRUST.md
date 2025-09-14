@@ -155,4 +155,3 @@ Overclaim: -0.10 -> 0.38
 `ALERTING_SETTINGS.repeat_overclaim_window_hours` used for high discrepancy repeat escalation (name legacy of overclaim focus).
 
 ---
-Next: `QUEUE_AND_WORKER.md`.

@@ -205,4 +205,3 @@ Attempt 1 (Missing):
 | Config schema validation | Prevent misconfig deployment accidents |
 
 ---
-Next: `ALERTING_AND_TRUST.md` (alerts matrix + trust scoring rationale).

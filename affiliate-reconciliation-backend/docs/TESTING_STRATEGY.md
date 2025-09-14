@@ -181,4 +181,3 @@ poetry run pytest -x --pdb
 | CI/CD integration | Automated testing in deployment pipeline | P1 |
 
 ---
-Next: `OPERATIONS_AND_OBSERVABILITY.md`.

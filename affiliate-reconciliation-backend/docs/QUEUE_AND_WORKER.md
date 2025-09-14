@@ -159,4 +159,3 @@ Worker processes attempt 2
 | QUEUE_SETTINGS.warn_depth | Logging threshold for backlog |
 
 ---
-Next: `TESTING_STRATEGY.md`.

@@ -243,4 +243,3 @@ WHERE status='INCOMPLETE_PLATFORM_DATA' AND last_attempt_at >= CURRENT_TIMESTAMP
 - Introducing multi-log attempt entity: would copy existing log into initial attempt record, keep ReconciliationLog as a view of latest.
 
 ---
-**Next:** `RECONCILIATION_ENGINE.md` for algorithm internals.
