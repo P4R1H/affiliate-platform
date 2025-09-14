@@ -393,11 +393,19 @@ async def global_exception_handler(request: Request, exc: Exception):
 @app.get("/health", tags=["health"], summary="Basic health check")
 async def health_check():
     """Basic health check endpoint for load balancers."""
+    # Minimal but now includes queue backend + redis status if enabled
+    use_redis = bool(QUEUE_SETTINGS.get("use_redis", False))  # type: ignore[arg-type]
+    redis_status = None
+    queue_backend = "redis" if use_redis else "memory"
+    if use_redis:
+        redis_status = "healthy" if check_redis_health() else "unavailable"
     return {
         "status": "healthy",
         "service": "affiliate-reconciliation-platform",
         "version": "1.0.0",
-        "timestamp": time.time()
+        "timestamp": time.time(),
+        "queue_backend": queue_backend,
+        **({"redis_status": redis_status} if redis_status is not None else {}),
     }
 
 @app.get("/health/detailed", tags=["health"], summary="Detailed health check")
@@ -423,10 +431,29 @@ async def detailed_health_check():
         health_status["checks"]["database"] = f"unhealthy: {str(e)}"
         health_status["status"] = "degraded"
     
-    # Add more health checks here
-    # - Redis connection
-    # - External API connectivity
-    # - File system access
+    # Redis check (only if configured to use redis queue)
+    use_redis = bool(QUEUE_SETTINGS.get("use_redis", False))  # type: ignore[arg-type]
+    if use_redis:
+        try:
+            healthy = check_redis_health()
+            health_status["checks"]["redis"] = "healthy" if healthy else "unavailable"
+            if not healthy and health_status["status"] == "healthy":
+                health_status["status"] = "degraded"
+        except Exception as e:  # pragma: no cover
+            health_status["checks"]["redis"] = f"error: {e}"  # noqa: E501
+            health_status["status"] = "degraded"
+
+    # Queue snapshot (non-blocking) for visibility
+    try:
+        queue = getattr(app.state, "reconciliation_queue", None)  # type: ignore[attr-defined]
+        if queue is not None:
+            snap = queue.snapshot()
+            # Avoid dumping potentially large internals
+            health_status["checks"]["queue"] = {
+                k: v for k, v in snap.items() if k in {"depth", "ready", "scheduled", "redis_active"}
+            }
+    except Exception:  # pragma: no cover
+        pass
     
     return health_status
 
