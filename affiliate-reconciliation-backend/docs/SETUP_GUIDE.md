@@ -122,6 +122,57 @@ poetry install
 poetry shell
 ```
 
+### Redis Setup (Recommended for Production)
+
+Redis is used for persistent queue storage, which makes the application restart-resilient. This ensures jobs are not lost during application restarts.
+
+**Install Redis:**
+
+*Ubuntu/Debian:*
+```bash
+sudo apt install redis-server
+sudo systemctl start redis-server
+sudo systemctl enable redis-server
+```
+
+*macOS:*
+```bash
+brew install redis
+brew services start redis
+```
+
+*Windows:*
+Use Windows Subsystem for Linux (WSL) or Docker:
+```bash
+# Using Docker
+docker run -d --name redis -p 6379:6379 redis:6
+
+# Or using WSL
+wsl -d ubuntu -e sudo apt update
+wsl -d ubuntu -e sudo apt install redis-server
+wsl -d ubuntu -e sudo service redis-server start
+```
+
+**Verify Redis Installation:**
+```bash
+# Test connection
+redis-cli ping
+# Should return: PONG
+
+# Monitor Redis (optional)
+redis-cli monitor
+```
+
+**Configure Application for Redis:**
+```bash
+# Add to .env file
+QUEUE_SETTINGS_USE_REDIS=true
+QUEUE_SETTINGS_REDIS_URL=redis://localhost:6379/0
+QUEUE_SETTINGS_REDIS_HEALTH_CHECK_TIMEOUT=2.0
+```
+
+The application will automatically fall back to the in-memory queue if Redis is unavailable, ensuring continuity even if Redis fails.
+
 ### Database Setup
 
 #### SQLite (Development - Default)
@@ -217,6 +268,9 @@ TRUST_SCORING_MAX_SCORE=1.0
 # Queue Settings
 QUEUE_SETTINGS_MAX_IN_MEMORY=5000
 QUEUE_SETTINGS_WARN_DEPTH=1000
+QUEUE_SETTINGS_USE_REDIS=false
+QUEUE_SETTINGS_REDIS_URL=redis://localhost:6379/0
+QUEUE_SETTINGS_REDIS_HEALTH_CHECK_TIMEOUT=2.0
 
 # Alerting
 ALERTING_SETTINGS_PLATFORM_DOWN_ESCALATION_MINUTES=120
@@ -237,6 +291,11 @@ For production deployments, also configure:
 ```bash
 # PostgreSQL (if using external database)
 DATABASE_URL=postgresql://user:password@localhost/dbname
+
+# Redis Queue (for restart resilience)
+USE_REDIS_QUEUE=true
+REDIS_URL=redis://localhost:6379/0
+REDIS_HEALTH_CHECK_TIMEOUT=2.0
 
 # Real Platform API Keys (replace mocks)
 REDDIT_CLIENT_ID=your_reddit_client_id
@@ -336,12 +395,64 @@ docker run -d \
   -v $(pwd)/logs:/app/logs \
   -e DATABASE_URL=sqlite:///./prod.db \
   -e SECRET_KEY=your-production-secret-key \
+  -e QUEUE_SETTINGS_USE_REDIS=true \
+  -e QUEUE_SETTINGS_REDIS_URL=redis://redis:6379/0 \
+  --link redis:redis \
   affiliate-platform
+
+# Run Redis container (if not already running)
+docker run -d --name redis redis:6
 ```
 
 #### Manual Production Setup
 
-**1. Server Setup:**
+**1. Docker Compose Setup (Recommended):**
+
+Create a `docker-compose.yml` file:
+```yaml
+version: '3'
+
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db/affiliate_reconciliation
+      - SECRET_KEY=your-production-secret-key
+      - QUEUE_SETTINGS_USE_REDIS=true
+      - QUEUE_SETTINGS_REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      - db
+      - redis
+
+  db:
+    image: postgres:13
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=affiliate_reconciliation
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:6
+    volumes:
+      - redis-data:/data
+
+volumes:
+  postgres-data:
+  redis-data:
+```
+
+Start the services:
+```bash
+docker-compose up -d
+```
+
+**2. Server Setup:**
 ```bash
 # Install dependencies
 sudo apt update
@@ -593,6 +704,11 @@ sudo ufw allow 22/tcp
 sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
 
+# Allow Redis (only from localhost or specific IPs)
+sudo ufw allow from 127.0.0.1 to any port 6379
+# For specific application server
+sudo ufw allow from 192.168.1.100 to any port 6379
+
 # Allow PostgreSQL (only from localhost)
 sudo ufw allow from 127.0.0.1 to any port 5432
 ```
@@ -657,6 +773,17 @@ ModuleNotFoundError: No module named 'app'
 - Activate Poetry shell: `poetry shell`
 - Reinstall dependencies: `poetry install`
 
+**3. Redis Not Working:**
+```
+RedisConnectionError: Error 111 connecting to localhost:6379. Connection refused.
+```
+
+**Solutions:**
+- Ensure Redis is running if USE_REDIS_QUEUE=true
+- Check REDIS_URL is correct in .env
+- The application will automatically fall back to in-memory queue if Redis is unavailable
+- For WSL, ensure Redis is running in the WSL instance: `wsl -d ubuntu -e sudo service redis-server status`
+
 **4. Permission Errors:**
 ```
 PermissionError: [Errno 13] Permission denied: 'logs/app.log'
@@ -679,12 +806,23 @@ chmod 755 logs
 
 ### Health Checks
 
+**Health Check for Redis:**
+```bash
+# Basic Redis health check
+redis-cli ping
+
+# Redis queue status
+curl http://localhost:8000/health | grep redis
+
+# Should include: {"redis_status": "healthy", ...}
+```
+
 **Application Health:**
 ```bash
 # Basic health check
 curl http://localhost:8000/health
 
-# Should return: {"status": "healthy", "timestamp": "..."}
+# Should return: {"status": "healthy", "redis_status": "healthy", "timestamp": "..."}
 ```
 
 **API Testing:**

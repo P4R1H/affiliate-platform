@@ -119,7 +119,8 @@ Returns basic health status for load balancer checks:
   "status": "healthy",
   "service": "affiliate-reconciliation-platform",
   "version": "1.0.0",
-  "timestamp": 1703123456.789
+  "timestamp": 1703123456.789,
+  "redis_status": "healthy"
 }
 ```
 
@@ -136,14 +137,16 @@ Performs comprehensive system checks:
   "version": "1.0.0",
   "timestamp": 1703123456.789,
   "checks": {
-    "database": "healthy"
+    "database": "healthy",
+    "redis": "healthy"
   }
 }
 ```
 
 **Checks Performed**:
 - **Database Connectivity**: Tests database connection and basic query execution
-- **Future Checks**: Redis, external APIs, file system, queue health
+- **Redis Connectivity**: Verifies Redis connection for queue operations
+- **Future Checks**: External APIs, file system, queue depth
 
 ### Health Check Configuration
 
