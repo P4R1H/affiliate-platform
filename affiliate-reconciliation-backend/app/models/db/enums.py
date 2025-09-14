@@ -15,6 +15,7 @@ class CampaignStatus(str, enum.Enum):
 
 class UserRole(str, enum.Enum):
     AFFILIATE = "AFFILIATE"
+    CLIENT = "CLIENT"
     ADMIN = "ADMIN"
 
 # ------------------ Reconciliation / Discrepancy Enums ------------------ #

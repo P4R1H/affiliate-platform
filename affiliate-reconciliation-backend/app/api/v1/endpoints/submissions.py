@@ -6,9 +6,9 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request, Query
 from sqlalchemy.orm import Session
 import time
-from app.api.deps import get_db, get_submission_affiliate
-from app.models.db import Post, AffiliateReport, Affiliate, Campaign, Platform
-from app.models.schemas.affiliates import AffiliatePostSubmission
+from app.api.deps import get_db, validate_platform_exists, get_submission_user
+from app.models.db import Post, AffiliateReport, User, Campaign, Platform
+from app.models.schemas.users import UserPostSubmission
 from app.models.schemas.posts import PostRead
 from app.models.schemas.base import ResponseBase
 from app.utils import get_logger, log_business_event, log_performance, process_post_url
@@ -28,10 +28,10 @@ logger = get_logger(__name__)
     description="Create a new post submission with initial metrics"
 )
 async def submit_post(
-    submission: AffiliatePostSubmission,
+    submission: UserPostSubmission,
     background_tasks: BackgroundTasks,
     request: Request,
-    current_affiliate: Affiliate = Depends(get_submission_affiliate),
+    current_user: User = Depends(get_submission_user),
     db: Session = Depends(get_db)
 ) -> ResponseBase:
     """Submit a brand new post with claimed metrics."""
@@ -40,8 +40,8 @@ async def submit_post(
     
     logger.info(
         "New post submission started",
-        affiliate_id=current_affiliate.id,
-        affiliate_name=current_affiliate.name,
+        user_id=current_user.id,
+        user_name=current_user.name,
         campaign_id=submission.campaign_id,
         platform_id=submission.platform_id,
         post_url=submission.post_url,
@@ -64,7 +64,7 @@ async def submit_post(
         if not campaign:
             logger.warning(
                 "Post submission failed: invalid campaign",
-                affiliate_id=current_affiliate.id,
+                user_id=current_user.id,
                 campaign_id=submission.campaign_id,
                 request_id=request_id
             )
@@ -81,7 +81,7 @@ async def submit_post(
         if not platform:
             logger.warning(
                 "Post submission failed: invalid platform",
-                affiliate_id=current_affiliate.id,
+                user_id=current_user.id,
                 platform_id=submission.platform_id,
                 request_id=request_id
             )
@@ -94,7 +94,7 @@ async def submit_post(
         if platform not in campaign.platforms:
             logger.warning(
                 "Post submission failed: platform not in campaign",
-                affiliate_id=current_affiliate.id,
+                user_id=current_user.id,
                 campaign_id=campaign.id,
                 platform_id=platform.id,
                 campaign_name=campaign.name,
@@ -115,7 +115,7 @@ async def submit_post(
             
             logger.info(
                 "URL processing completed successfully",
-                affiliate_id=current_affiliate.id,
+                user_id=current_user.id,
                 original_url=submission.post_url,
                 processed_url=processed_url,
                 detected_platform=detected_platform,
@@ -127,7 +127,7 @@ async def submit_post(
         except ValueError as e:
             logger.warning(
                 "Post submission failed: URL processing error",
-                affiliate_id=current_affiliate.id,
+                user_id=current_user.id,
                 post_url=submission.post_url,
                 platform_name=platform.name,
                 error=str(e),
@@ -143,13 +143,13 @@ async def submit_post(
             Post.campaign_id == submission.campaign_id,
             Post.platform_id == submission.platform_id,
             Post.url == processed_url,  # Use processed URL for duplicate check
-            Post.affiliate_id == current_affiliate.id
+            Post.user_id == current_user.id
         ).first()
         
         if existing_post:
             logger.warning(
                 "Post submission failed: post already exists",
-                affiliate_id=current_affiliate.id,
+                user_id=current_user.id,
                 existing_post_id=existing_post.id,
                 processed_url=processed_url,
                 request_id=request_id
@@ -173,7 +173,7 @@ async def submit_post(
         # Create NEW post with processed URL
         post = Post(
             campaign_id=submission.campaign_id,
-            affiliate_id=current_affiliate.id,
+            user_id=current_user.id,
             platform_id=submission.platform_id,
             url=processed_url,  # Store the clean, processed URL
             title=submission.title,
@@ -195,8 +195,8 @@ async def submit_post(
         )
         db.add(affiliate_report)
         
-        # Update affiliate metrics for new post
-        current_affiliate.total_submissions += 1
+        # Update user metrics for new post
+        current_user.total_submissions += 1
         
         db.commit()
         db.refresh(post)
@@ -221,7 +221,7 @@ async def submit_post(
                 "submission_method": submission.submission_method.value,
                 "evidence_provided": bool(submission.evidence_data)
             },
-            user_id=current_affiliate.id,
+            user_id=current_user.id,
             request_id=request_id
         )
         
@@ -235,7 +235,7 @@ async def submit_post(
                     request_id=request_id
                 )
             else:
-                trust_score = float(getattr(current_affiliate, "trust_score", 0.5) or 0.5)
+                trust_score = float(getattr(current_user, "trust_score", 0.5) or 0.5)
                 trust_bucket = bucket_for_priority(trust_score)
                 susp_flags = affiliate_report.suspicion_flags or {}
                 priority_label = compute_priority(trust_score, bool(susp_flags))
@@ -266,7 +266,7 @@ async def submit_post(
             operation="submit_new_post",
             duration_ms=duration_ms,
             additional_data={
-                "affiliate_id": current_affiliate.id,
+                "affiliate_id": current_user.id,
                 "campaign_id": campaign.id,
                 "has_evidence": bool(submission.evidence_data),
                 "url_processing_required": submission.post_url != processed_url
@@ -299,7 +299,7 @@ async def submit_post(
     except Exception as e:
         logger.error(
             "Post submission failed with unexpected error",
-            affiliate_id=current_affiliate.id,
+            affiliate_id=current_user.id,
             post_url=submission.post_url,
             error=str(e),
             request_id=request_id,
@@ -318,10 +318,10 @@ async def submit_post(
 )
 async def update_post_metrics(
     post_id: int,
-    submission: AffiliatePostSubmission,
+    submission: UserPostSubmission,
     background_tasks: BackgroundTasks,
     request: Request,
-    current_affiliate: Affiliate = Depends(get_submission_affiliate),
+    current_user: User = Depends(get_submission_user),
     db: Session = Depends(get_db)
 ) -> ResponseBase:
     """Update metrics for an existing post (creates new AffiliateReport for historical tracking)."""
@@ -330,7 +330,7 @@ async def update_post_metrics(
     
     logger.info(
         "Post metrics update started",
-        affiliate_id=current_affiliate.id,
+        user_id=current_user.id,
         post_id=post_id,
         claimed_metrics={
             "views": submission.claimed_views,
@@ -344,13 +344,13 @@ async def update_post_metrics(
         # Get existing post
         post = db.query(Post).filter(
             Post.id == post_id,
-            Post.affiliate_id == current_affiliate.id  # Security: only own posts
+            Post.user_id == current_user.id  # Security: only own posts
         ).first()
         
         if not post:
             logger.warning(
                 "Post metrics update failed: post not found",
-                affiliate_id=current_affiliate.id,
+                user_id=current_user.id,
                 post_id=post_id,
                 request_id=request_id
             )
@@ -369,7 +369,7 @@ async def update_post_metrics(
             if not platform:
                 logger.error(
                     "Post metrics update failed: platform not found",
-                    affiliate_id=current_affiliate.id,
+                    user_id=current_user.id,
                     post_id=post_id,
                     platform_id=post.platform_id,
                     request_id=request_id
@@ -385,7 +385,7 @@ async def update_post_metrics(
             if processed_url != post.url:
                 logger.warning(
                     "Post metrics update failed: URL mismatch after processing",
-                    affiliate_id=current_affiliate.id,
+                    user_id=current_user.id,
                     post_id=post_id,
                     existing_url=post.url,
                     submitted_url=submission.post_url,
@@ -399,7 +399,7 @@ async def update_post_metrics(
         except ValueError as e:
             logger.warning(
                 "Post metrics update failed: URL processing error",
-                affiliate_id=current_affiliate.id,
+                user_id=current_user.id,
                 post_id=post_id,
                 submitted_url=submission.post_url,
                 error=str(e),
@@ -415,7 +415,7 @@ async def update_post_metrics(
             submission.platform_id != post.platform_id):
             logger.warning(
                 "Post metrics update failed: data mismatch",
-                affiliate_id=current_affiliate.id,
+                user_id=current_user.id,
                 post_id=post_id,
                 request_id=request_id
             )
@@ -471,7 +471,7 @@ async def update_post_metrics(
                 "evidence_provided": bool(submission.evidence_data),
                 "total_reports_for_post": len(post.affiliate_reports)
             },
-            user_id=current_affiliate.id,
+            user_id=current_user.id,
             request_id=request_id
         )
         
@@ -485,7 +485,7 @@ async def update_post_metrics(
                     request_id=request_id
                 )
             else:
-                trust_score = float(getattr(current_affiliate, "trust_score", 0.5) or 0.5)
+                trust_score = float(getattr(current_user, "trust_score", 0.5) or 0.5)
                 trust_bucket = bucket_for_priority(trust_score)
                 susp_flags = affiliate_report.suspicion_flags or {}
                 priority_label = compute_priority(trust_score, bool(susp_flags))
@@ -516,7 +516,7 @@ async def update_post_metrics(
             operation="update_post_metrics",
             duration_ms=duration_ms,
             additional_data={
-                "affiliate_id": current_affiliate.id,
+                "affiliate_id": current_user.id,
                 "post_id": post.id,
                 "has_evidence": bool(submission.evidence_data)
             }
@@ -545,7 +545,7 @@ async def update_post_metrics(
     except Exception as e:
         logger.error(
             "Post metrics update failed with unexpected error",
-            affiliate_id=current_affiliate.id,
+            affiliate_id=current_user.id,
             post_id=post_id,
             error=str(e),
             request_id=request_id,
@@ -567,7 +567,7 @@ async def get_submission_history(
     offset: int = Query(0, ge=0),
     campaign_id: Optional[int] = Query(None),
     platform_id: Optional[int] = Query(None),
-    current_affiliate: Affiliate = Depends(get_submission_affiliate),
+    current_user: User = Depends(get_submission_user),
     db: Session = Depends(get_db)
 ) -> List[PostRead]:
     """Get submission history for the authenticated affiliate."""
@@ -576,7 +576,7 @@ async def get_submission_history(
     
     logger.info(
         "Submission history requested",
-        affiliate_id=current_affiliate.id,
+        affiliate_id=current_user.id,
         limit=limit,
         offset=offset,
         campaign_filter=campaign_id,
@@ -585,7 +585,7 @@ async def get_submission_history(
     )
     
     try:
-        query = db.query(Post).filter(Post.affiliate_id == current_affiliate.id)
+        query = db.query(Post).filter(Post.user_id == current_user.id)
         
         if campaign_id:
             query = query.filter(Post.campaign_id == campaign_id)
@@ -601,14 +601,14 @@ async def get_submission_history(
             operation="get_submission_history",
             duration_ms=duration_ms,
             additional_data={
-                "affiliate_id": current_affiliate.id,
+                "affiliate_id": current_user.id,
                 "posts_returned": len(posts)
             }
         )
         
         logger.info(
             "Submission history completed",
-            affiliate_id=current_affiliate.id,
+            affiliate_id=current_user.id,
             posts_returned=len(posts),
             duration_ms=duration_ms,
             request_id=request_id
@@ -619,7 +619,7 @@ async def get_submission_history(
     except Exception as e:
         logger.error(
             "Submission history failed",
-            affiliate_id=current_affiliate.id,
+            affiliate_id=current_user.id,
             error=str(e),
             request_id=request_id,
             exc_info=True
@@ -637,7 +637,7 @@ async def get_submission_history(
 async def get_post_metrics_history(
     post_id: int,
     request: Request,
-    current_affiliate: Affiliate = Depends(get_submission_affiliate),
+    current_user: User = Depends(get_submission_user),
     db: Session = Depends(get_db)
 ) -> List[dict]:
     """Get all metrics reports for a specific post (historical tracking)."""
@@ -646,7 +646,7 @@ async def get_post_metrics_history(
     
     logger.info(
         "Post metrics history requested",
-        affiliate_id=current_affiliate.id,
+        affiliate_id=current_user.id,
         post_id=post_id,
         request_id=request_id
     )
@@ -655,7 +655,7 @@ async def get_post_metrics_history(
         # Get post and verify ownership
         post = db.query(Post).filter(
             Post.id == post_id,
-            Post.affiliate_id == current_affiliate.id
+            Post.user_id == current_user.id
         ).first()
         
         if not post:
@@ -688,7 +688,7 @@ async def get_post_metrics_history(
             operation="get_post_metrics_history",
             duration_ms=duration_ms,
             additional_data={
-                "affiliate_id": current_affiliate.id,
+                "affiliate_id": current_user.id,
                 "post_id": post_id,
                 "reports_returned": len(metrics_history)
             }
@@ -696,7 +696,7 @@ async def get_post_metrics_history(
         
         logger.info(
             "Post metrics history completed",
-            affiliate_id=current_affiliate.id,
+            affiliate_id=current_user.id,
             post_id=post_id,
             reports_returned=len(metrics_history),
             duration_ms=duration_ms,
@@ -710,7 +710,7 @@ async def get_post_metrics_history(
     except Exception as e:
         logger.error(
             "Post metrics history failed",
-            affiliate_id=current_affiliate.id,
+            affiliate_id=current_user.id,
             post_id=post_id,
             error=str(e),
             request_id=request_id,

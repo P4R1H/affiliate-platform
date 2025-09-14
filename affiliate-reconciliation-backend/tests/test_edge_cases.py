@@ -1,5 +1,5 @@
 from fastapi.testclient import TestClient
-from app.models.db import Platform, Campaign, Affiliate, Post, AffiliateReport, ReconciliationLog, Alert
+from app.models.db import Platform, Campaign, User, Post, AffiliateReport, ReconciliationLog, Alert
 from app.models.db.alerts import AlertType, AlertStatus
 from app.models.db.reconciliation_logs import ReconciliationStatus, DiscrepancyLevel
 from app.models.db.affiliate_reports import SubmissionMethod
@@ -7,10 +7,10 @@ from datetime import date
 
 
 def test_duplicate_affiliate_email(client):
-    payload = {"name": "User1", "email": "dup@example.com"}
-    r = client.post("/api/v1/affiliates/", json=payload)
+    payload = {"name": "User1", "email": "dup@example.com", "role": "AFFILIATE"}
+    r = client.post("/api/v1/users/", json=payload)
     assert r.status_code == 201
-    r2 = client.post("/api/v1/affiliates/", json=payload)
+    r2 = client.post("/api/v1/users/", json=payload)
     assert r2.status_code == 409
 
 
@@ -62,7 +62,7 @@ def test_alert_resolution_flow(client, db_session, platform_factory, affiliate_f
     affiliate = affiliate_factory()
     campaign = campaign_factory("Camp3", [reddit.id])
     # Create post + affiliate report
-    post = Post(campaign_id=campaign.id, affiliate_id=affiliate.id, platform_id=reddit.id, url="http://u/1")
+    post = Post(campaign_id=campaign.id, user_id=affiliate.id, platform_id=reddit.id, url="http://u/1")
     db_session.add(post)
     db_session.flush()
     report = AffiliateReport(post_id=post.id, claimed_views=1000, claimed_clicks=100, claimed_conversions=10, submission_method=SubmissionMethod.API)

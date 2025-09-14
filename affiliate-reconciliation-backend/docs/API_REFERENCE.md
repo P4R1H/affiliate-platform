@@ -13,7 +13,7 @@ All API endpoints require authentication via Bearer token:
 Authorization: Bearer {affiliate_api_key}
 ```
 
-API keys are generated when creating an affiliate account and can be retrieved via the `/affiliates/me` endpoint.
+API keys are generated when creating a user account and can be retrieved via the `/users/me` endpoint.
 
 ## Response Format
 All API responses follow a consistent structure:
@@ -39,11 +39,11 @@ Error responses:
 }
 ```
 
-## Affiliates
+## Users
 
-### Create Affiliate
+### Create User
 ```http
-POST /api/v1/affiliates/
+POST /api/v1/users/
 ```
 
 **Request Body:**
@@ -60,12 +60,12 @@ POST /api/v1/affiliates/
 ```json
 {
   "success": true,
-  "message": "Affiliate created successfully",
+  "message": "User created successfully",
   "data": {
     "id": 1,
     "name": "John Smith",
     "email": "john@example.com",
-    "api_key": "aff_abc123def456",
+    "api_key": "user_abc123def456",
     "trust_score": 0.50,
     "role": "AFFILIATE",
     "is_active": true,
@@ -74,9 +74,9 @@ POST /api/v1/affiliates/
 }
 ```
 
-### Get Current Affiliate Profile
+### Get Current User Profile
 ```http
-GET /api/v1/affiliates/me
+GET /api/v1/users/me
 ```
 
 **Response:**
@@ -99,9 +99,9 @@ GET /api/v1/affiliates/me
 }
 ```
 
-### Update Affiliate Profile
+### Update User Profile
 ```http
-PUT /api/v1/affiliates/me
+PUT /api/v1/users/me
 ```
 
 **Request Body:**

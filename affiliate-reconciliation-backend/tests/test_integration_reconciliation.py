@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.models.db import Platform, Affiliate, Campaign, Post, AffiliateReport, ReconciliationLog, Alert
+from app.models.db import Platform, User, Campaign, Post, AffiliateReport, ReconciliationLog, Alert
 from app.models.db.enums import ReconciliationStatus
 from app.models.db.alerts import AlertType
 from app.models.db.reconciliation_logs import DiscrepancyLevel
@@ -44,7 +44,8 @@ def seeded_platform(platform_factory):
 def affiliate(db_session):
     """Create a unique affiliate per test to avoid UNIQUE constraint collisions."""
     unique = secrets.token_hex(4)
-    a = Affiliate(name=f"IntTest-{unique}", email=f"inttest-{unique}@example.com", api_key=f"aff_inttest_{unique}")
+    from app.models.db.enums import UserRole
+    a = User(name=f"IntTest-{unique}", email=f"inttest-{unique}@example.com", api_key=f"aff_inttest_{unique}", role=UserRole.AFFILIATE)
     db_session.add(a)
     db_session.commit()
     db_session.refresh(a)
@@ -52,10 +53,35 @@ def affiliate(db_session):
 
 @pytest.fixture()
 def campaign(db_session, seeded_platform):
-    from app.models.db import Campaign
-    from app.models.db.enums import CampaignStatus
+    from app.models.db import Campaign, Client, User
+    from app.models.db.enums import CampaignStatus, UserRole
     from datetime import date
-    c = Campaign(name="Int Camp", advertiser_name="BrandX", start_date=date(2025,1,1), status=CampaignStatus.ACTIVE)
+    import secrets
+    
+    # Create a test client
+    client = Client(name=f"Test Client {secrets.token_hex(2)}")
+    db_session.add(client)
+    db_session.flush()
+    
+    # Get or create an admin user to be the campaign creator
+    admin_user = db_session.query(User).filter(User.role == UserRole.ADMIN).first()
+    if not admin_user:
+        admin_user = User(
+            name=f"Admin User {secrets.token_hex(2)}",
+            email=f"admin_{secrets.token_hex(4)}@example.com",
+            role=UserRole.ADMIN,
+            api_key=f"admin_key_{secrets.token_hex(8)}"
+        )
+        db_session.add(admin_user)
+        db_session.flush()
+    
+    c = Campaign(
+        name="Int Camp", 
+        client_id=client.id, 
+        created_by=admin_user.id,
+        start_date=date(2025,1,1), 
+        status=CampaignStatus.ACTIVE
+    )
     c.platforms = [seeded_platform]
     db_session.add(c)
     db_session.commit()

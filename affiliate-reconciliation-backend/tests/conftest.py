@@ -22,10 +22,10 @@ Important: SQLAlchemy relationship configuration requires all model modules to b
 before Base.metadata.create_all(), otherwise back_populates targets might not exist yet.
 """
 from app.models.db import (
-    Platform, Campaign, Affiliate, Post, AffiliateReport, ReconciliationLog, Alert,
+    Platform, Campaign, User, Post, AffiliateReport, ReconciliationLog, Alert,
     # Import modules that define back_populates targets to ensure mapper config
 )
-from app.models.db import platforms, campaigns, affiliates, posts, affiliate_reports, platform_reports, reconciliation_logs, alerts  # noqa: F401
+from app.models.db import platforms, campaigns, users, posts, affiliate_reports, platform_reports, reconciliation_logs, alerts  # noqa: F401
 from app.models.db.enums import CampaignStatus, UserRole
 from app.jobs.queue import PriorityDelayQueue
 from app.jobs.worker_reconciliation import ReconciliationWorker
@@ -139,10 +139,10 @@ def affiliate_factory(db_session):
             email = f"{secrets.token_hex(4)}@example.com"
         # If collision occurs (rare), retry with new suffix
         attempt = 0
-        while db_session.query(Affiliate).filter_by(name=name).first():
+        while db_session.query(User).filter_by(name=name).first():
             attempt += 1
             name = f"{name}-{attempt}-{secrets.token_hex(1)}"
-        a = Affiliate(name=name, email=email, api_key=f"aff_{secrets.token_hex(12)}")
+        a = User(name=name, email=email, api_key=f"aff_{secrets.token_hex(12)}", role=UserRole.AFFILIATE)
         db_session.add(a)
         db_session.commit()
         db_session.refresh(a)
@@ -153,9 +153,37 @@ def affiliate_factory(db_session):
 def campaign_factory(db_session):
     def _create(name: str, platform_ids: list[int]):
         from datetime import date
-        from app.models.db import Platform, Campaign
+        from app.models.db import Platform, Campaign, Client, User
+        from app.models.db.enums import UserRole
+        import secrets
+        
+        # Create a test client if one doesn't exist
+        client = db_session.query(Client).first()
+        if not client:
+            client = Client(name=f"Test Client {secrets.token_hex(2)}")
+            db_session.add(client)
+            db_session.flush()
+        
+        # Get or create an admin user to be the campaign creator
+        admin_user = db_session.query(User).filter(User.role == UserRole.ADMIN).first()
+        if not admin_user:
+            admin_user = User(
+                name=f"Admin User {secrets.token_hex(2)}",
+                email=f"admin_{secrets.token_hex(4)}@example.com",
+                role=UserRole.ADMIN,
+                api_key=f"admin_key_{secrets.token_hex(8)}"
+            )
+            db_session.add(admin_user)
+            db_session.flush()
+        
         platforms = db_session.query(Platform).filter(Platform.id.in_(platform_ids)).all()
-        campaign = Campaign(name=name, advertiser_name="Acme", start_date=date(2025, 1, 1), status=CampaignStatus.ACTIVE)
+        campaign = Campaign(
+            name=name, 
+            client_id=client.id, 
+            created_by=admin_user.id,
+            start_date=date(2025, 1, 1), 
+            status=CampaignStatus.ACTIVE
+        )
         campaign.platforms = platforms
         db_session.add(campaign)
         db_session.commit()

@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 from app.models.db.affiliate_reports import AffiliateReport
 from app.models.db.reconciliation_logs import ReconciliationLog
 from app.models.db.platform_reports import PlatformReport
-from app.models.db.affiliates import Affiliate
+from app.models.db.users import User
 from app.models.db.posts import Post
 from app.models.db.platforms import Platform
 from app.models.db.enums import ReconciliationStatus, TrustEvent
@@ -94,7 +94,7 @@ def run_reconciliation(session: Session, affiliate_report_id: int) -> Dict[str, 
         raise ValueError(f"AffiliateReport {affiliate_report_id} not found")
 
     post: Post = report.post  # lazy relationship
-    affiliate: Affiliate = post.affiliate
+    user: User = post.user
     platform: Platform = post.platform
 
     log = _ensure_log(session, report)
@@ -129,11 +129,12 @@ def run_reconciliation(session: Session, affiliate_report_id: int) -> Dict[str, 
     # Trust scoring
     trust_delta = 0.0
     if classification.trust_event:
-        new_trust, trust_delta = apply_trust_event(float(affiliate.trust_score), classification.trust_event)
-        affiliate.trust_score = new_trust
-        affiliate.last_trust_update = now  # type: ignore[assignment]
+        current_trust = user.trust_score or 0.5  # Default trust score if None
+        new_trust, trust_delta = apply_trust_event(float(current_trust), classification.trust_event)
+        user.trust_score = new_trust
+        user.last_trust_update = now  # type: ignore[assignment]
         if classification.trust_event == TrustEvent.PERFECT_MATCH:
-            affiliate.accurate_submissions += 1
+            user.accurate_submissions += 1
 
     # Persist / update platform report if we have at least one metric (success path)
     platform_report_obj: PlatformReport | None = None
@@ -186,7 +187,7 @@ def run_reconciliation(session: Session, affiliate_report_id: int) -> Dict[str, 
 
     # Alert creation (before commit so alert persists atomically with log changes)
     retry_scheduled_flag = retry_time is not None
-    maybe_create_alert(session, log, affiliate=affiliate, post=post, retry_scheduled=retry_scheduled_flag)
+    maybe_create_alert(session, log, user=user, post=post, retry_scheduled=retry_scheduled_flag)
 
     from sqlalchemy.orm.exc import StaleDataError
     try:
@@ -212,7 +213,7 @@ def run_reconciliation(session: Session, affiliate_report_id: int) -> Dict[str, 
         "attempt_count": log.attempt_count,
         "scheduled_retry_at": retry_time.isoformat() if retry_time else None,
         "trust_delta": trust_delta if trust_delta != 0 else 0.0,
-        "new_trust_score": float(affiliate.trust_score),
+        "new_trust_score": float(user.trust_score or 0.5),
         "discrepancy_level": classification.discrepancy_level,
         "max_discrepancy_pct": float(classification.max_discrepancy_pct) if classification.max_discrepancy_pct is not None else None,
         "rate_limited": outcome.rate_limited,

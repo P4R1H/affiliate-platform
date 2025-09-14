@@ -121,7 +121,7 @@ def test_full_system_flow(client: TestClient, db_session: Session, platform_fact
     alerts = db_session.query(Alert).join(ReconciliationLog, Alert.reconciliation_log_id == ReconciliationLog.id)\
         .join(AffiliateReport, ReconciliationLog.affiliate_report_id == AffiliateReport.id)\
         .join(Post, AffiliateReport.post_id == Post.id)\
-        .filter(Post.affiliate_id == affiliate.id).all()
+        .filter(Post.user_id == affiliate.id).all()
     assert len(alerts) == 1
 
     # Basic sanity: all logs present

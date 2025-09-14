@@ -9,7 +9,7 @@ from ..db.enums import CampaignStatus
 
 class CampaignCreate(BaseModel):
     name: str = Field(min_length=1, max_length=300)
-    advertiser_name: str = Field(min_length=1, max_length=200)
+    client_id: int = Field(gt=0, description="ID of the client this campaign belongs to")
     start_date: date
     end_date: Optional[date] = None
     impression_cap: Optional[int] = Field(None, gt=0)
@@ -19,7 +19,7 @@ class CampaignCreate(BaseModel):
     model_config = ConfigDict(json_schema_extra={
         "example": {
             "name": "Gamer Graveyard",
-            "advertiser_name": "Opera GX",
+            "client_id": 1,
             "start_date": "2025-06-01",
             "end_date": "2025-08-31",
             "impression_cap": 1000000,
@@ -31,7 +31,8 @@ class CampaignCreate(BaseModel):
 class CampaignRead(BaseModel):
     id: int
     name: str
-    advertiser_name: str
+    client_id: int
+    created_by: int
     start_date: date
     end_date: Optional[date]
     impression_cap: Optional[int]
@@ -41,10 +42,23 @@ class CampaignRead(BaseModel):
     
     model_config = ConfigDict(from_attributes=True)
 
+class CampaignReadWithRelations(CampaignRead):
+    """Campaign with client and creator details."""
+    client: Optional["ClientRead"] = None
+    creator: Optional["UserRead"] = None
+    
+    model_config = ConfigDict(from_attributes=True)
+
 class CampaignUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=300)
     end_date: Optional[date] = None
     impression_cap: Optional[int] = Field(None, gt=0)
     cpm: Optional[Decimal] = Field(None, gt=0)
     status: Optional[CampaignStatus] = None
+
+# Forward references
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from .clients import ClientRead
+    from .users import UserRead
 

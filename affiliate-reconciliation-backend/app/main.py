@@ -59,46 +59,6 @@ async def lifespan(app: FastAPI):
         Base.metadata.create_all(bind=engine)
         logger.info("Database tables created successfully")
 
-        # Create admin user (minimal inline seed). Always idempotent.
-        try:
-            from sqlalchemy.orm import Session
-            from app.database import SessionLocal as _SessionLocal
-            from app.models.db import Affiliate
-            from app.models.db.enums import UserRole
-            import secrets
-
-            seed_db: Session = _SessionLocal()
-            admin_email = os.getenv("ADMIN_EMAIL", "").strip()
-            admin_name = os.getenv("ADMIN_NAME", "").strip() or "AdminUser"
-            admin_api_key_env = os.getenv("ADMIN_API_KEY", "").strip()
-
-            if admin_email:
-                existing = seed_db.query(Affiliate).filter(Affiliate.email == admin_email).first()
-                if existing:
-                    if existing.role != UserRole.ADMIN:
-                        existing.role = UserRole.ADMIN
-                        seed_db.commit()
-                        logger.info("Existing affiliate promoted to admin", affiliate_id=existing.id, email=admin_email)
-                    else:
-                        logger.info("Admin affiliate already exists", affiliate_id=existing.id, email=admin_email)
-                else:
-                    api_key = admin_api_key_env or f"aff_{secrets.token_urlsafe(32)}"
-                    admin = Affiliate(name=admin_name or "AdminUser", email=admin_email, api_key=api_key, role=UserRole.ADMIN, is_active=True)
-                    seed_db.add(admin)
-                    seed_db.commit()
-                    seed_db.refresh(admin)
-                    logger.warning(
-                        "Admin affiliate created (store API key securely)",
-                        affiliate_id=admin.id,
-                        email=admin_email,
-                        api_key_preview=api_key[:8] + "..."
-                    )
-            else:
-                logger.info("ADMIN_EMAIL not set; skipping admin creation")
-            seed_db.close()
-        except Exception as se:  # pragma: no cover
-            logger.error("Inline admin seeding failed", error=str(se), exc_info=True)
-
         # Initialize in-memory queue + worker (MVP)
         _queue = PriorityDelayQueue()
         # expose queue in app state for endpoints to enqueue jobs without importing main (avoid circular)

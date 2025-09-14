@@ -1,5 +1,5 @@
 from fastapi.testclient import TestClient
-from app.models.db import Platform, ReconciliationLog, Affiliate
+from app.models.db import Platform, ReconciliationLog, User, Post
 from app.models.db.affiliate_reports import SubmissionMethod
 from sqlalchemy.orm import Session
 import time
@@ -32,9 +32,9 @@ def test_full_affiliate_submission_flow(client: TestClient, db_session: Session,
     # Seed platform
     reddit = platform_factory("reddit")
 
-    # Create affiliate via API (tests POST /affiliates)
-    payload = {"name": "Alpha Influencer", "email": "alpha@example.com"}
-    r = client.post("/api/v1/affiliates/", json=payload)
+    # Create affiliate via API (tests POST /users)
+    payload = {"name": "Alpha Influencer", "email": "alpha@example.com", "role": "AFFILIATE"}
+    r = client.post("/api/v1/users/", json=payload)
     assert r.status_code == 201, r.text
     affiliate_data = r.json()
     api_key = affiliate_data["api_key"]
@@ -70,15 +70,30 @@ def test_full_affiliate_submission_flow(client: TestClient, db_session: Session,
     assert log is not None, "Reconciliation log not produced by worker"
     assert log.status.name == "MATCHED"
 
-    affiliate_row = db_session.query(Affiliate).filter_by(id=affiliate_id).first()
+    affiliate_row = db_session.query(User).filter_by(id=affiliate_id).first()
     assert affiliate_row is not None
-    assert float(affiliate_row.trust_score) >= 0.5  # default likely 0.5 baseline, ensure not decreased
+    assert affiliate_row.trust_score is not None and float(affiliate_row.trust_score) >= 0.5  # default likely 0.5 baseline, ensure not decreased
 
     r = client.get(f"/api/v1/submissions/{sub_resp['post_id']}/metrics", headers=auth)
     assert r.status_code == 200
     metrics_history = r.json()
     assert len(metrics_history) == 1  # only initial submission (no subsequent updates here)
 
+    # Check alerts for this specific affiliate only (other tests may leave alerts in DB)
     r = client.get("/api/v1/alerts/")
     assert r.status_code == 200
-    assert r.json() == []
+    alerts = r.json()
+    
+    # Filter alerts for this specific affiliate by checking if any alert relates to our user
+    affiliate_alerts = []
+    if alerts:
+        for alert in alerts:
+            # Check if this alert relates to our user by checking the reconciliation log
+            if 'reconciliation_log_id' in alert:
+                log = db_session.query(ReconciliationLog).filter_by(id=alert['reconciliation_log_id']).first()
+                if log and log.affiliate_report:
+                    post = db_session.query(Post).filter_by(id=log.affiliate_report.post_id).first()
+                    if post and post.user_id == affiliate_id:
+                        affiliate_alerts.append(alert)
+    
+    assert affiliate_alerts == [], f"Expected no alerts for this affiliate, but found: {affiliate_alerts}"

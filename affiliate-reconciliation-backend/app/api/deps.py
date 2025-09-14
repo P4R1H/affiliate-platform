@@ -1,12 +1,12 @@
 """
 Dependencies for authentication, database sessions, and common validations.
 """
-from typing import Generator, Optional
+from typing import Generator, Optional, List
 from fastapi import Depends, HTTPException, status, Header, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from app.database import SessionLocal
-from app.models.db import Affiliate, Platform, Campaign
+from app.models.db import User, Platform, Campaign, Client
 from app.models.db.enums import UserRole
 from app.utils import get_logger
 
@@ -31,37 +31,37 @@ def get_db() -> Generator[Session, None, None]:
     finally:
         db.close()
 
-def get_current_affiliate(
+def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db)
-) -> Affiliate:
+) -> User:
     """
-    Extract and validate affiliate from API key.
-    Used for affiliate-specific endpoints that require authentication.
+    Extract and validate user from API key.
+    Used for user-specific endpoints that require authentication.
     
     Args:
         credentials: Bearer token credentials from Authorization header
         db: Database session
         
     Returns:
-        Affiliate: Authenticated affiliate object
+        User: Authenticated user object
         
     Raises:
-        HTTPException: If API key is invalid or affiliate is inactive
+        HTTPException: If API key is invalid or user is inactive
     """
     api_key = credentials.credentials
     
     logger.debug(
-        "Affiliate authentication attempt",
+        "User authentication attempt",
         api_key_prefix=api_key[:10] + "..." if len(api_key) > 10 else api_key
     )
     
-    affiliate = db.query(Affiliate).filter(
-        Affiliate.api_key == api_key,
-        Affiliate.is_active == True
+    user = db.query(User).filter(
+        User.api_key == api_key,
+        User.is_active == True
     ).first()
     
-    if not affiliate:
+    if not user:
         logger.warning(
             "Authentication failed: invalid or inactive API key",
             api_key_prefix=api_key[:10] + "..." if len(api_key) > 10 else api_key
@@ -73,64 +73,268 @@ def get_current_affiliate(
         )
     
     logger.info(
-        "Affiliate authenticated successfully",
-        affiliate_id=affiliate.id,
-        affiliate_name=affiliate.name
+        "User authenticated successfully",
+        user_id=user.id,
+        user_name=user.name,
+        user_role=user.role
     )
     
-    return affiliate
+    return user
 
-def get_submission_affiliate(
+# Legacy alias for backward compatibility
+def get_current_affiliate(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db)
+) -> User:
+    """
+    Legacy function for backward compatibility.
+    Now returns User but only for AFFILIATE role users.
+    """
+    user = get_current_user(credentials, db)
+    
+    if user.role != UserRole.AFFILIATE:
+        logger.warning(
+            "Access denied: non-affiliate user attempted to use affiliate endpoint",
+            user_id=user.id,
+            user_role=user.role
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This endpoint is only available to affiliate users"
+        )
+    
+    return user
+
+def require_role(allowed_roles: List[UserRole]):
+    """
+    Factory function to create a dependency that requires specific user roles.
+    
+    Args:
+        allowed_roles: List of allowed user roles
+        
+    Returns:
+        Dependency function that validates user role
+    """
+    def role_dependency(
+        current_user: User = Depends(get_current_user)
+    ) -> User:
+        if current_user.role not in allowed_roles:
+            logger.warning(
+                "Access denied: insufficient role",
+                user_id=current_user.id,
+                user_role=current_user.role,
+                required_roles=[role.value for role in allowed_roles]
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access denied. Required roles: {[role.value for role in allowed_roles]}"
+            )
+        return current_user
+    
+    return role_dependency
+
+def require_admin(
+    current_user: User = Depends(get_current_user)
+) -> User:
+    """
+    Dependency that requires ADMIN role.
+    
+    Args:
+        current_user: Current authenticated user
+        
+    Returns:
+        User: Admin user object
+        
+    Raises:
+        HTTPException: If user is not an admin
+    """
+    if current_user.role != UserRole.ADMIN:
+        logger.warning(
+            "Access denied: admin required",
+            user_id=current_user.id,
+            user_role=current_user.role
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+    
+    return current_user
+
+def get_current_client_user(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> User:
+    """
+    Dependency that returns a client user with client relationship preloaded.
+    
+    Args:
+        current_user: Current authenticated user
+        db: Database session
+        
+    Returns:
+        User: Client user with client relationship loaded
+        
+    Raises:
+        HTTPException: If user is not a client user
+    """
+    if current_user.role != UserRole.CLIENT:
+        logger.warning(
+            "Access denied: client role required",
+            user_id=current_user.id,
+            user_role=current_user.role
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Client access required"
+        )
+    
+    # Ensure client relationship is loaded
+    if not current_user.client:
+        db.refresh(current_user, ['client'])
+    
+    return current_user
+
+def require_client_access(client_id: int):
+    """
+    Factory function to create a dependency that validates client ownership.
+    
+    Args:
+        client_id: ID of the client to validate access for
+        
+    Returns:
+        Dependency function that validates client access
+    """
+    def client_access_dependency(
+        current_user: User = Depends(get_current_user)
+    ) -> User:
+        # Admin users have access to all clients
+        if current_user.role == UserRole.ADMIN:
+            return current_user
+        
+        # Client users can only access their own client
+        if current_user.role == UserRole.CLIENT:
+            if current_user.client_id != client_id:
+                logger.warning(
+                    "Access denied: client access violation",
+                    user_id=current_user.id,
+                    user_client_id=current_user.client_id,
+                    requested_client_id=client_id
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied: insufficient permissions for this client"
+                )
+            return current_user
+        
+        # Affiliate users have no client access by default
+        logger.warning(
+            "Access denied: affiliates cannot access client data",
+            user_id=current_user.id,
+            user_role=current_user.role
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: affiliates cannot access client data"
+        )
+    
+    return client_access_dependency
+
+def get_submission_user(
     request: Request,
     db: Session = Depends(get_db),
     x_discord_user_id: str | None = Header(None, alias="X-Discord-User-ID"),
-) -> Affiliate:
+) -> User:
     """Hybrid auth for submission endpoints.
 
     Allows either:
-      1. Standard affiliate Bearer API key (same as get_current_affiliate)
+      1. Standard user Bearer API key (same as get_current_user)
       2. Bot internal token (Authorization: Bot <token>) + X-Discord-User-ID header
-         which maps to an active affiliate by discord_user_id.
+         which maps to an active affiliate user by discord_user_id.
 
     This narrows bot privileges to submission actions while keeping existing
-    API key flow intact for direct affiliate API usage.
+    API key flow intact for direct user API usage.
     """
     from app.config import BOT_INTERNAL_TOKEN
 
-    # Path 2: Bot token flow
-    auth_header = request.headers.get("Authorization")
-    if auth_header and auth_header.startswith("Bot "):
-        provided = auth_header[4:].strip()
-        if not BOT_INTERNAL_TOKEN or provided != BOT_INTERNAL_TOKEN:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid bot token")
-        if not x_discord_user_id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing X-Discord-User-ID header")
-        affiliate = db.query(Affiliate).filter(
-            Affiliate.discord_user_id == str(x_discord_user_id),
-            Affiliate.is_active == True
+    # Get authorization header
+    auth_header = request.headers.get("Authorization", "")
+    
+    # Path 1: Standard user API key flow
+    if auth_header.startswith("Bearer "):
+        api_key = auth_header[7:]  # Remove "Bearer " prefix
+        
+        user = db.query(User).filter(
+            User.api_key == api_key,
+            User.is_active == True
         ).first()
-        if not affiliate:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Affiliate not found for Discord user")
+        
+        if user:
+            logger.info(
+                "User authenticated via API key for submission",
+                user_id=user.id,
+                user_name=user.name,
+                user_role=user.role
+            )
+            return user
+    
+    # Path 2: Bot token flow (only for affiliate users)
+    elif auth_header.startswith("Bot "):
+        bot_token = auth_header[4:]  # Remove "Bot " prefix
+        
+        if bot_token != BOT_INTERNAL_TOKEN:
+            logger.warning(
+                "Bot authentication failed: invalid token",
+                provided_token_prefix=bot_token[:10] + "..." if len(bot_token) > 10 else bot_token
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid bot token"
+            )
+        
+        if not x_discord_user_id:
+            logger.warning("Bot authentication failed: missing Discord user ID header")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="X-Discord-User-ID header required for bot authentication"
+            )
+        
+        # Find affiliate user by Discord ID
+        user = db.query(User).filter(
+            User.discord_user_id == x_discord_user_id,
+            User.role == UserRole.AFFILIATE,  # Only affiliate users can submit via bot
+            User.is_active == True
+        ).first()
+        
+        if not user:
+            logger.warning(
+                "Bot authentication failed: Discord user not found or not affiliate",
+                discord_user_id=x_discord_user_id
+            )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Active affiliate user with Discord ID '{x_discord_user_id}' not found"
+            )
+        
         logger.info(
-            "Bot-authenticated affiliate submission",
-            affiliate_id=affiliate.id,
+            "User authenticated via bot token for submission",
+            user_id=user.id,
+            user_name=user.name,
             discord_user_id=x_discord_user_id
         )
-        return affiliate
+        
+        return user
+    
+    # No valid authentication found
+    logger.warning("Submission authentication failed: no valid credentials")
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Valid authentication required (Bearer token or Bot token with Discord ID)",
+        headers={"WWW-Authenticate": "Bearer"}
+    )
 
-    # Path 1: Standard affiliate API key using Bearer scheme
-    if auth_header and auth_header.startswith("Bearer "):
-        token = auth_header[len("Bearer "):].strip()
-        # Reuse logic similar to get_current_affiliate without invoking HTTPBearer (which rejects Bot scheme)
-        affiliate = db.query(Affiliate).filter(
-            Affiliate.api_key == token,
-            Affiliate.is_active == True
-        ).first()
-        if not affiliate:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or inactive API key")
-        return affiliate
-
-    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials")
+# Legacy alias for backward compatibility
+get_submission_affiliate = get_submission_user
 
 def validate_platform_exists(platform_id: int, db: Session = Depends(get_db)) -> Platform:
     """
@@ -302,20 +506,4 @@ def check_admin_access(
     
     logger.info("Admin access granted")
     return True
-
-def require_admin(current_affiliate: Affiliate = Depends(get_current_affiliate)) -> Affiliate:
-    """Role-based admin guard using authenticated affiliate.
-
-    Returns the affiliate if they have ADMIN role, else raises 403.
-    This replaces header-based admin key checks for stronger RBAC coherence.
-    """
-    if current_affiliate.role != UserRole.ADMIN:
-        logger.warning(
-            "Admin role required",
-            affiliate_id=current_affiliate.id,
-            role=current_affiliate.role
-        )
-        from fastapi import HTTPException, status
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin role required")
-    return current_affiliate
 
