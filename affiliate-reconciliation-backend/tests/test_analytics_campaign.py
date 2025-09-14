@@ -155,3 +155,20 @@ def test_campaign_not_found_returns_404(client: TestClient, db_session: Session)
     db_session.commit()
     r = client.get("/api/v1/analytics/campaigns/999999", headers={"Authorization": f"Bearer {admin.api_key}"})
     assert r.status_code == 404
+
+
+def test_analytics_zero_reports_success_rate_null(client: TestClient, db_session: Session, platform_factory, campaign_factory):
+    """Campaign with no posts/reports should return success_rate null and zeros elsewhere."""
+    plat = platform_factory("youtube")
+    campaign = campaign_factory("EmptyCamp", [plat.id])
+    admin = db_session.query(User).filter(User.role == UserRole.ADMIN).first()
+    assert admin is not None
+    resp = client.get(f"/api/v1/analytics/campaigns/{campaign.id}", headers={"Authorization": f"Bearer {admin.api_key}"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["totals"]["posts"] == 0
+    assert data["reconciliation"]["total_reconciled"] == 0
+    assert data["reconciliation"]["pending_reports"] == 0
+    assert data["reconciliation"]["success_rate"] is None
+    assert data["platform_breakdown"] == []
+    assert data["recent_alerts"] == []
