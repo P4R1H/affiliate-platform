@@ -20,6 +20,7 @@ On dequeue:
 This avoids starvation of currently-ready lower-priority items caused by a far-future
 higher-priority entry which would happen with a single composite heap keyed by (ready_at, priority).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -94,6 +95,7 @@ class PriorityDelayQueue:
 
     # ----------------------------- public API ----------------------------- #
     def enqueue(self, job: Any, *, priority: str = "normal", delay_seconds: float = 0.0) -> QueueItem:
+        """Enqueue a job with optional priority and delay."""
         with self._lock:
             if self._shutdown:
                 raise RuntimeError("Queue shutdown")

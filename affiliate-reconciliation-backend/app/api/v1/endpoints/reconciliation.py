@@ -233,6 +233,7 @@ async def get_reconciliation_results(
     summary="Get reconciliation queue snapshot"
 )
 async def queue_snapshot(request: Request, current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.CLIENT]))) -> ResponseBase:
+    """Get a snapshot of the current reconciliation queue status."""
     request_id = request.headers.get("X-Request-ID", "unknown")
     queue = getattr(request.app.state, "reconciliation_queue", None)  # type: ignore[attr-defined]
     if queue is None:

@@ -8,6 +8,7 @@ from app.config import BACKOFF_POLICY
 
 
 def compute_backoff_seconds(attempt: int, *, base: Optional[int] = None, factor: Optional[int] = None, max_seconds: Optional[int] = None, jitter_pct: Optional[float] = None) -> float:
+    """Compute exponential backoff delay with jitter."""
     if attempt < 1:
         attempt = 1
     base = int(base if base is not None else BACKOFF_POLICY["base_seconds"])  # type: ignore[index]

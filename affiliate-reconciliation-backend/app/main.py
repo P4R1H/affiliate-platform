@@ -39,6 +39,13 @@ _worker: ReconciliationWorker | None = None
 
 
 def enqueue_reconciliation(affiliate_report_id: int, priority: str = "normal", delay_seconds: float = 0.0) -> None:
+    """Enqueue a reconciliation job for the given affiliate report.
+
+    Args:
+        affiliate_report_id: The ID of the affiliate report to reconcile.
+        priority: Job priority level ('high', 'normal', 'low').
+        delay_seconds: Delay before the job becomes available for processing.
+    """
     if _queue is None:
         raise RuntimeError("Queue not initialized")
     job = ReconciliationJob(affiliate_report_id=affiliate_report_id, priority=priority)

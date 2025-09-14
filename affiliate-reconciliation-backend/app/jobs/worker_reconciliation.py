@@ -43,6 +43,7 @@ class ReconciliationWorker:
         self._stop_event = threading.Event()
 
     def start(self) -> None:
+        """Start the reconciliation worker thread."""
         if self._thread and self._thread.is_alive():  # pragma: no cover
             return
         self._thread = threading.Thread(target=self._loop, name="reconciliation-worker", daemon=True)
@@ -50,6 +51,7 @@ class ReconciliationWorker:
         logger.info("Reconciliation worker started")
 
     def stop(self) -> None:
+        """Stop the reconciliation worker thread."""
         self._stop_event.set()
         logger.info("Reconciliation worker stop requested")
 

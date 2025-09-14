@@ -62,6 +62,7 @@ class InMemoryRateLimiter:
         return int(time.time())
 
     async def check_and_increment(self, key: str, category: str, limit: int, window_seconds: int) -> Tuple[bool, dict]:
+        """Check if request is allowed and increment counter."""
         now = self._now()
         window_start = now - (now % window_seconds)  # fixed window boundary
 

@@ -88,6 +88,11 @@ def _schedule_retry(status: ReconciliationStatus, attempt_count: int, submitted_
 
 
 def run_reconciliation(session: Session, affiliate_report_id: int) -> Dict[str, Any]:
+    """Run reconciliation for an affiliate report.
+
+    Fetches platform data, classifies discrepancies, applies trust scoring,
+    and updates reconciliation log with results.
+    """
     now = datetime.now(timezone.utc)
     report: AffiliateReport | None = session.query(AffiliateReport).filter(AffiliateReport.id == affiliate_report_id).one_or_none()
     if report is None:
