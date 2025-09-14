@@ -91,7 +91,7 @@ RETRY_POLICY: dict[str, dict[str, int | float]] = {
 }
 
 # --------------------------------- Queue ---------------------------------- #
-QUEUE_SETTINGS: dict[str, dict[str, int] | int] = {
+QUEUE_SETTINGS: dict[str, dict[str, int] | int | bool | str | float] = {
 	"priorities": {  # Lower number = higher priority
 		"high": 0,
 		"normal": 5,
@@ -99,6 +99,12 @@ QUEUE_SETTINGS: dict[str, dict[str, int] | int] = {
 	},
 	"warn_depth": 1000,
 	"max_in_memory": 5000,
+	# Redis configuration
+	"use_redis": os.getenv("USE_REDIS_QUEUE", "false").lower() in {"1", "true", "yes"},
+	"redis_url": os.getenv("REDIS_URL", "redis://localhost:6379/0"),
+	"redis_ready_key": "affiliate:ready_queue",  # List for ready jobs
+	"redis_scheduled_key": "affiliate:scheduled_jobs",  # Sorted set for scheduled jobs
+	"redis_health_check_timeout": float(os.getenv("REDIS_HEALTH_CHECK_TIMEOUT", "2.0")),
 }
 
 # -------------------------------- Alerting -------------------------------- #

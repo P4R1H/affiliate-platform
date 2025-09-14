@@ -15,10 +15,11 @@ from contextlib import asynccontextmanager
 from app.api.v1 import api_router
 from app.utils import setup_logging, get_logger
 from app.jobs.queue import PriorityDelayQueue  # queue infra
-from app.jobs.worker_reconciliation import ReconciliationWorker
+from app.jobs.worker_reconciliation import ReconciliationWorker, create_queue
 from app.jobs.reconciliation_job import ReconciliationJob
 from app.database import engine
 from app.database import Base
+from app.config import QUEUE_SETTINGS
 
 # Setup logging before creating the app
 setup_logging(
@@ -29,7 +30,7 @@ setup_logging(
 
 logger = get_logger(__name__)
 
-_queue: PriorityDelayQueue | None = None
+_queue = None
 _worker: ReconciliationWorker | None = None
 
 
@@ -41,6 +42,23 @@ def enqueue_reconciliation(affiliate_report_id: int, priority: str = "normal", d
     logger.info(
         "Enqueued reconciliation job", report_id=affiliate_report_id, priority=priority, delay=delay_seconds
     )
+
+
+def check_redis_health() -> bool:
+    """Check if Redis is available for queue operations."""
+    try:
+        import redis
+        redis_url = str(QUEUE_SETTINGS.get("redis_url", "redis://localhost:6379/0"))
+        timeout = float(QUEUE_SETTINGS.get("redis_health_check_timeout", 2.0))  # type: ignore[arg-type]
+        
+        # Try to connect and ping Redis
+        redis_client = redis.from_url(redis_url, socket_connect_timeout=timeout)
+        redis_client.ping()
+        logger.info("Redis health check: Redis is available", url=redis_url)
+        return True
+    except (ImportError, Exception) as e:
+        logger.warning("Redis health check: Redis is unavailable", error=str(e))
+        return False
 
 
 @asynccontextmanager
@@ -59,13 +77,23 @@ async def lifespan(app: FastAPI):
         Base.metadata.create_all(bind=engine)
         logger.info("Database tables created successfully")
 
-        # Initialize in-memory queue + worker (MVP)
-        _queue = PriorityDelayQueue()
+        # Check Redis health if Redis queue is enabled
+        use_redis = QUEUE_SETTINGS.get("use_redis", False)  # type: ignore[assignment]
+        if use_redis:
+            redis_available = check_redis_health()
+            if redis_available:
+                logger.info("Redis queue will be used for job processing")
+            else:
+                logger.warning("Redis queue is enabled but Redis is unavailable. Using in-memory queue as fallback.")
+        
+        # Initialize queue and worker
+        _queue = create_queue()
         # expose queue in app state for endpoints to enqueue jobs without importing main (avoid circular)
         app.state.reconciliation_queue = _queue  # type: ignore[attr-defined]
         _worker = ReconciliationWorker(_queue)
         _worker.start()
         logger.info("Reconciliation queue + worker started")
+        
         # Start Discord bot (non-blocking) if explicitly enabled
         try:
             from app.config import ENABLE_DISCORD_BOT
