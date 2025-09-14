@@ -410,6 +410,8 @@ poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
 - Visit: http://localhost:8000
 - Should see: `{"message": "Affiliate Reconciliation Platform API", ...}`
 - API docs: http://localhost:8000/docs
+- Basic health: `curl http://localhost:8000/health` now also shows `queue_backend` and `redis_status` (if Redis enabled)
+- Detailed health (with DB + queue snapshot): `curl http://localhost:8000/health/detailed`
 
 ## Production Deployment
 
