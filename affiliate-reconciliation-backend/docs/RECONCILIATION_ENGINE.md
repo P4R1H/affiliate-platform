@@ -1,24 +1,6 @@
 # Reconciliation Engine
-13. Invoke `maybe_create_alert` with retry_scheduled flag.
-14. Commit transaction with StaleDataError retry handling.
-15. Return structured summary dict for API/worker usage.
 
-### Return Value Structure
-```python
-{
-    "affiliate_report_id": int,
-    "status": str,  # ReconciliationStatus enum value
-    "attempt_count": int,
-    "scheduled_retry_at": str | None,  # ISO format datetime
-    "trust_delta": float,  # 0.0 if no change
-    "new_trust_score": float,
-    "discrepancy_level": str | None,
-    "max_discrepancy_pct": float | None,
-    "rate_limited": bool,
-    "error_code": str | None,
-    "missing_fields": list[str],
-}
-```ep technical specification of `run_reconciliation` and its collaborating services.
+Technical specification of the `run_reconciliation` function and its collaborating services. This engine orchestrates the complete reconciliation workflow: loading affiliate reports, fetching platform metrics, classifying discrepancies, applying trust scoring, scheduling retries, and triggering alerts.
 
 ## 1. Objectives
 | Objective | Implementation Strategy |
@@ -45,6 +27,23 @@
 12. Invoke `maybe_create_alert` with retry_scheduled flag.
 13. Commit transaction.
 14. Return structured summary dict (API-friendly, currently used for internal worker tests).
+
+### Return Value Structure
+```python
+{
+    "affiliate_report_id": int,
+    "status": str,  # ReconciliationStatus enum value
+    "attempt_count": int,
+    "scheduled_retry_at": str | None,  # ISO format datetime
+    "trust_delta": float,  # 0.0 if no change
+    "new_trust_score": float,
+    "discrepancy_level": str | None,
+    "max_discrepancy_pct": float | None,
+    "rate_limited": bool,
+    "error_code": str | None,
+    "missing_fields": list[str],
+}
+```
 
 ## 3. Classification Algorithm Details
 Core logic lives in `discrepancy_classifier.classify`:
@@ -149,7 +148,7 @@ Session lifecycle:
 - On breaker OPEN, call is denied early → classification path → missing.
 - Failures (including rate-limited) count toward breaker threshold (future refinement: treat rate limit separately).
 
-## 13. Logging & Observability Points
+## 12. Logging & Observability Points
 | Log Location | Purpose |
 |--------------|---------|
 | Worker start/finish | Operational heartbeat |
@@ -159,7 +158,7 @@ Session lifecycle:
 
 Future: metric counters for attempt latency, status distribution, trust event frequency.
 
-## 14. Configuration Cheat Sheet
+## 13. Configuration Cheat Sheet
 | Setting Namespace | Key Examples |
 |-------------------|--------------|
 | RECONCILIATION_SETTINGS | base_tolerance_pct, discrepancy_tiers, overclaim thresholds |
@@ -168,7 +167,7 @@ Future: metric counters for attempt latency, status distribution, trust event fr
 | ALERTING_SETTINGS | repeat_overclaim_window_hours=6 |
 | CIRCUIT_BREAKER | failure_threshold, open_cooldown_seconds, half_open_probe_count |
 
-## 15. Edge Case Handling
+## 14. Edge Case Handling
 | Edge Case | Behavior |
 |-----------|----------|
 | All claimed metrics zero, platform None | Missing classification, schedule retry |
@@ -176,7 +175,7 @@ Future: metric counters for attempt latency, status distribution, trust event fr
 | Rate limit mid-attempt | Treated as failure; attempts continue until max_attempts |
 | Auth error | Terminal inside fetch loop (no further in-attempt retries) |
 
-## 16. Example Reconciliation Trace (Annotated)
+## 15. Example Reconciliation Trace (Annotated)
 ```
 Attempt 1:
   FetchOutcome: success=True metrics={views:100, clicks:10, conversions:1}
@@ -196,7 +195,7 @@ Attempt 1 (Missing):
   Commit
 ```
 
-## 17. Future Enhancements Backlog (Engine Scope)
+## 16. Future Enhancements Backlog (Engine Scope)
 | Feature | Benefit |
 |---------|---------|
 | Attempt entity & idempotency token | Hard guards against double trust deltas |
