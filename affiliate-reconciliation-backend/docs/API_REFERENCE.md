@@ -879,16 +879,42 @@ DELETE /api/v1/clients/{client_id}
 
 ## Rate Limits
 
-- **Submissions**: 100 per hour per user
-- **General API**: 1000 requests per hour per API key
-- **Reconciliation triggers**: 10 per minute per user (ADMIN/CLIENT roles only)
-- **Reconciliation queries**: 100 per minute per user (ADMIN/CLIENT roles only)
+The platform enforces per-API key limits with endpoint categories. Defaults (can be overridden via environment variables):
 
-Rate limit headers are included in all responses:
+| Category | Default Limit | Window | Description |
+|----------|---------------|--------|-------------|
+| `default` | 1000 | 1 hour | All requests not in a more specific category |
+| `submission` | 100 | 1 hour | Post submissions & metric updates (`/api/v1/submissions`) |
+| `recon_trigger` | 10 | 60 seconds | Manual reconciliation trigger (`POST /api/v1/reconciliation/run`) |
+| `recon_query` | 100 | 60 seconds | Reconciliation result/query endpoints (`/api/v1/reconciliation/results`, `/logs/{id}`, `/queue`) |
+
+Role-based overrides (for the `default` category) may increase limits for privileged users (e.g. ADMIN 5000, CLIENT 2000) if configured.
+
+Environment variable knobs (examples):
 ```
-X-RateLimit-Limit: 1000
-X-RateLimit-Remaining: 999
-X-RateLimit-Reset: 1610712000
+RATE_LIMIT_DEFAULT_LIMIT=1000
+RATE_LIMIT_DEFAULT_WINDOW=3600
+RATE_LIMIT_SUBMISSION_LIMIT=100
+RATE_LIMIT_RECON_TRIGGER_LIMIT=10
+RATE_LIMIT_RECON_TRIGGER_WINDOW=60
+RATE_LIMIT_RECON_QUERY_LIMIT=100
+RATE_LIMIT_ROLE_ADMIN_LIMIT=5000
+```
+
+Standard headers are returned on every response:
+```
+X-RateLimit-Limit: <int total allowed in window>
+X-RateLimit-Remaining: <int remaining>
+X-RateLimit-Reset: <epoch seconds when window resets>
+```
+
+If the limit is exceeded a `429 Too Many Requests` response is returned with body:
+```json
+{
+  "success": false,
+  "message": "Rate limit exceeded for category 'submission'",
+  "category": "submission"
+}
 ```
 
 ## Webhooks (Future Feature)
