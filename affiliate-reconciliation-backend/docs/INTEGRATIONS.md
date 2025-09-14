@@ -123,6 +123,8 @@ class PlatformAPIResponse(BaseModel):
         )
 ```
 
+**Note**: `UnifiedMetrics` is imported from `app.models.schemas.base`.
+
 ## Error Handling & Platform Errors
 
 All integrations include comprehensive error handling with structured error reporting:
