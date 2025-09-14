@@ -37,7 +37,7 @@ This project implements an end‑to‑end reconciliation workflow:
 
 The implementation is intentionally lean: only primitives needed for correctness, integrity, and extensibility—no speculative abstractions.
 
-## 2. Key Enhancements vs Original Brief
+## 2. Key Enhancements vs Original Brief (Assumptions & Decisions)
 These deliberate deviations / additions are explicitly documented for reviewer transparency:
 | Area | Brief Expectation | Delivered Enhancement |
 |------|-------------------|-----------------------|
