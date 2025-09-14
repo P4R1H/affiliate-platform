@@ -9,6 +9,7 @@ End-to-end system for receiving affiliate-reported performance metrics, normaliz
 - [4. Minimal Architecture Snapshot](#4-minimal-architecture-snapshot)
 - [5. Tech Stack](#5-tech-stack)
 - [6. Quick Start](#6-quick-start)
+- [6.1 Docker Quick Start](#61-docker-quick-start)
 - [7. Documentation Index](#7-documentation-index)
 - [8. Current Capability Highlights](#8-current-capability-highlights)
 - [9. Extending](#9-extending)
@@ -49,7 +50,7 @@ These deliberate deviations / additions are explicitly documented for reviewer t
 | Security | Basic auth | API key + role-based admin guard (RBAC scaffold) |
 | Observability | Unspecified | Structured logging, metrics hooks, circuit breaker, backoff, priority queue |
 
-See `affiliate-reconciliation-backend/docs/ROADMAP.md` for what is planned next.
+See `docs/ROADMAP.md` for what is planned next.
 
 ## 3. Core Design Choices (Retained Summary)
 * **Mock‑first strategy** – Accelerates iteration; real APIs can replace metric generators behind existing interfaces.
@@ -67,8 +68,8 @@ Deep dives for each topic live in the docs directory (links below).
 ## 4. Minimal Architecture Snapshot
 ```
 Clients → FastAPI Layer → Domain Services (Submissions • Integrations • Reconciliation • Trust/Alerts)
-          ↓
-        Persistence (SQLite dev / PostgreSQL target) + Queue + Structured Logging
+					↓
+				Persistence (SQLite dev / PostgreSQL target) + Queue + Structured Logging
 ```
 
 ## 5. Tech Stack
@@ -149,18 +150,18 @@ docker run -p 8000:8000 --env-file ./affiliate-reconciliation-backend/.env affil
 ## 7. Documentation Index
 | Topic | Link |
 |-------|------|
-| Architecture Overview | [ARCHITECTURE_OVERVIEW.md](affiliate-reconciliation-backend/docs/ARCHITECTURE_OVERVIEW.md) |
-| Data Model & Integrity | [DATA_MODEL.md](affiliate-reconciliation-backend/docs/DATA_MODEL.md) |
-| Reconciliation Engine | [RECONCILIATION_ENGINE.md](affiliate-reconciliation-backend/docs/RECONCILIATION_ENGINE.md) |
-| Queue & Worker | [QUEUE_AND_WORKER.md](affiliate-reconciliation-backend/docs/QUEUE_AND_WORKER.md) |
-| Alerting & Trust Scoring | [ALERTING_AND_TRUST.md](affiliate-reconciliation-backend/docs/ALERTING_AND_TRUST.md) |
-| Platform Integrations | [INTEGRATIONS.md](affiliate-reconciliation-backend/docs/INTEGRATIONS.md) |
-| API Reference | [API_REFERENCE.md](affiliate-reconciliation-backend/docs/API_REFERENCE.md) |
-| Configuration Reference | [CONFIGURATION.md](affiliate-reconciliation-backend/docs/CONFIGURATION.md) |
-| Setup / Deployment | [SETUP_GUIDE.md](affiliate-reconciliation-backend/docs/SETUP_GUIDE.md) |
-| Data Flow Examples | [DATA_FLOW_EXAMPLES.md](affiliate-reconciliation-backend/docs/DATA_FLOW_EXAMPLES.md) |
-| Testing Strategy | [TESTING_STRATEGY.md](affiliate-reconciliation-backend/docs/TESTING_STRATEGY.md) |
-| Roadmap | [ROADMAP.md](affiliate-reconciliation-backend/docs/ROADMAP.md) |
+| Architecture Overview | [ARCHITECTURE_OVERVIEW.md](docs/ARCHITECTURE_OVERVIEW.md) |
+| Data Model & Integrity | [DATA_MODEL.md](docs/DATA_MODEL.md) |
+| Reconciliation Engine | [RECONCILIATION_ENGINE.md](docs/RECONCILIATION_ENGINE.md) |
+| Queue & Worker | [QUEUE_AND_WORKER.md](docs/QUEUE_AND_WORKER.md) |
+| Alerting & Trust Scoring | [ALERTING_AND_TRUST.md](docs/ALERTING_AND_TRUST.md) |
+| Platform Integrations | [INTEGRATIONS.md](docs/INTEGRATIONS.md) |
+| API Reference | [API_REFERENCE.md](docs/API_REFERENCE.md) |
+| Configuration Reference | [CONFIGURATION.md](docs/CONFIGURATION.md) |
+| Setup / Deployment | [SETUP_GUIDE.md](docs/SETUP_GUIDE.md) |
+| Data Flow Examples | [DATA_FLOW_EXAMPLES.md](docs/DATA_FLOW_EXAMPLES.md) |
+| Testing Strategy | [TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md) |
+| Roadmap | [ROADMAP.md](docs/ROADMAP.md) |
 
 ## 8. Current Capability Highlights
 | Capability | Status |
@@ -210,5 +211,3 @@ See full list in `docs/ROADMAP.md`. Near-term priorities: PostgreSQL migration, 
 - Prevent reconciliation of potentially outdated platform data
 
 ---
-
-

@@ -91,6 +91,18 @@ RETRY_POLICY: dict[str, dict[str, int | float]] = {
 }
 
 # --------------------------------- Queue ---------------------------------- #
+_use_redis_primary = os.getenv("USE_REDIS_QUEUE")
+_use_redis_legacy = os.getenv("QUEUE_SETTINGS_USE_REDIS")
+_use_redis_effective = (_use_redis_primary or _use_redis_legacy or "false").lower() in {"1", "true", "yes"}
+
+_redis_url_primary = os.getenv("REDIS_URL")
+_redis_url_legacy = os.getenv("QUEUE_SETTINGS_REDIS_URL")
+_redis_url_effective = _redis_url_primary or _redis_url_legacy or "redis://localhost:6379/0"
+
+_redis_hc_primary = os.getenv("REDIS_HEALTH_CHECK_TIMEOUT")
+_redis_hc_legacy = os.getenv("QUEUE_SETTINGS_REDIS_HEALTH_CHECK_TIMEOUT")
+_redis_hc_effective = float(_redis_hc_primary or _redis_hc_legacy or "2.0")
+
 QUEUE_SETTINGS: dict[str, dict[str, int] | int | bool | str | float] = {
 	"priorities": {  # Lower number = higher priority
 		"high": 0,
@@ -99,12 +111,12 @@ QUEUE_SETTINGS: dict[str, dict[str, int] | int | bool | str | float] = {
 	},
 	"warn_depth": 1000,
 	"max_in_memory": 5000,
-	# Redis configuration
-	"use_redis": os.getenv("USE_REDIS_QUEUE", "false").lower() in {"1", "true", "yes"},
-	"redis_url": os.getenv("REDIS_URL", "redis://localhost:6379/0"),
+	# Redis configuration with backward-compatible variable names
+	"use_redis": _use_redis_effective,
+	"redis_url": _redis_url_effective,
 	"redis_ready_key": "affiliate:ready_queue",  # List for ready jobs
 	"redis_scheduled_key": "affiliate:scheduled_jobs",  # Sorted set for scheduled jobs
-	"redis_health_check_timeout": float(os.getenv("REDIS_HEALTH_CHECK_TIMEOUT", "2.0")),
+	"redis_health_check_timeout": _redis_hc_effective,
 }
 
 # -------------------------------- Alerting -------------------------------- #
