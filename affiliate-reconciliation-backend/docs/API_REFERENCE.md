@@ -219,6 +219,45 @@ GET /api/v1/campaigns/
 }
 ```
 
+## Analytics
+
+### Get Campaign Analytics
+```http
+GET /api/v1/analytics/campaigns/{campaign_id}
+```
+
+Return essential metrics for a single campaign (MVP scope only).
+
+RBAC:
+* ADMIN: access any campaign
+* CLIENT: only campaigns with matching `client_id`
+* AFFILIATE: 403 Forbidden
+
+**Response:**
+```json
+{
+  "campaign_id": 123,
+  "campaign_name": "Spring Promo",
+  "client_id": 42,
+  "totals": {"posts": 18, "views": 4567, "clicks": 321, "conversions": 44},
+  "reconciliation": {"success_rate": 0.8753, "pending_reports": 5, "total_reconciled": 40},
+  "platform_breakdown": [
+    {"platform_id": 1, "platform_name": "reddit", "views": 2000, "clicks": 120, "conversions": 10},
+    {"platform_id": 2, "platform_name": "instagram", "views": 2567, "clicks": 201, "conversions": 34}
+  ],
+  "recent_alerts": [
+    {"id": 9, "severity": "HIGH", "status": "OPEN", "title": "Overclaim detected", "created_at": "2025-09-13T10:22:55Z"}
+  ],
+  "request_id": "..."
+}
+```
+
+Notes:
+* Success statuses counted toward success_rate: `MATCHED`, `DISCREPANCY_LOW`.
+* `success_rate` is null when there are zero reconciled reports.
+* `recent_alerts` limited to most recent 5 alerts tied to campaign via reconciliation logs.
+* No date filtering yet (future enhancement).
+
 ## Submissions
 
 ### Submit New Post

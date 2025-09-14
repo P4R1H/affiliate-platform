@@ -507,3 +507,39 @@ def check_admin_access(
     logger.info("Admin access granted")
     return True
 
+def get_campaign_if_authorized(
+    campaign_id: int,
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.CLIENT])),
+    db: Session = Depends(get_db)
+) -> Campaign:
+    """Fetch a campaign and enforce RBAC access rules.
+
+    Access rules:
+      * ADMIN: any campaign
+      * CLIENT: only campaigns whose client_id matches the user's client_id
+      * AFFILIATE: filtered out by require_role dependency
+
+    Returns the campaign object if authorized.
+    Raises 404 if campaign not found, 403 if client mismatch.
+    """
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    if not campaign:
+        logger.warning(
+            "Campaign not found during access check", campaign_id=campaign_id
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found"
+        )
+    if current_user.role == UserRole.CLIENT and current_user.client_id != campaign.client_id:
+        logger.warning(
+            "Client access denied for campaign",
+            user_id=current_user.id,
+            campaign_id=campaign_id,
+            user_client_id=current_user.client_id,
+            campaign_client_id=campaign.client_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
+        )
+    return campaign
+
