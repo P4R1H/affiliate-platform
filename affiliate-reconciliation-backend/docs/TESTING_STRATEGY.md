@@ -1,26 +1,6 @@
 # Testing Strategy
 
-How we ensure correctness, resilience, and regression detection across the reconciliation p## 11. Sample Assertion Patterns
-```python
-# Wait for reconciliation completion
-log = wait_for(lambda: db_session.query(ReconciliationLog).filter_by(affiliate_report_id=report_id).first())
-assert log and log.status == ReconciliationStatus.MATCHED
-
-# Trust score progression
-db_session.refresh(affiliate)
-after_match = float(affiliate.trust_score)
-assert after_match >= base_trust  # Trust increased
-
-# Alert verification
-alert = db_session.query(Alert).filter_by(reconciliation_log_id=log.id).first()
-assert alert and alert.alert_type == AlertType.HIGH_DISCREPANCY
-
-# Confidence ratio for partial data
-assert log.confidence_ratio is not None and float(log.confidence_ratio) < 1
-
-# Retry scheduling for missing data
-assert log.scheduled_retry_at is not None
-```m.
+How we ensure correctness, resilience, and regression detection across the reconciliation platform.
 
 ## 1. Philosophy
 | Principle | Implementation |
