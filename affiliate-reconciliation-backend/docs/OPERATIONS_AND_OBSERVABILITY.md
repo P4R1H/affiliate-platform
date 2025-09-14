@@ -4,50 +4,39 @@ Guidance for running, monitoring, and troubleshooting the reconciliation platfor
 
 ## 1. Operational Objectives
 | Objective | Description |
-|----## 6. Health Checks & Monitoring
+|-----------|-------------|
+| Timely anomaly detection | Surface fraud or data issues quickly |
+| Minimal MTTR | Provide clear diagnostics to resolve failures fast |
+| Predictable performance | Stable ingestion latency & processing throughput |
+| Transparent state | Ability to answer "what is the status of X" immediately |
 
-**File**: `app/main.py`
-## 8. Circuit Breaker Runbook
+## 2. Runtime Components & Ownership
+| Component | Responsibility | Owner |
+|-----------|---------------|-------|
+| API (FastAPI) | Submission handling, CRUD endpoints | Backend |
+| Queue | Buffer & prioritize reconciliation jobs | Backend |
+| Worker | Execute reconciliation attempts | Backend |
+| Circuit Breaker | Integration protection | Backend |
+| Alerting Logic | Emission of risk/ops signals | Risk/Backend |
+| DB (SQLite test / future RDBMS) | Persistence | DevOps/DBA |
 
-**File**: `app/utils/circuit_breaker.py`
+## 3. Logging Infrastructure
 
-The platform includes an in-memory circuit breaker for protecting against cascading failures in platform integration## 10. Troubleshooting Guide
+The platform uses a comprehensive structured logging system with JSON formatting for production and human-readable formatting for development.
 
-| Issue | Likely Causes | Steps |
-|-------|---------------|-------|
-| **All reconciliations become MISSING** | Platform outage, circuit breaker open, adapter import error | 1. Check logs for `fetch_error` vs `circuit_open` patterns<br>2. Verify platform API status manually<br>3. Check circuit breaker state: `GLOBAL_CIRCUIT_BREAKER.snapshot()`<br>4. Validate adapter module imports |
-| **Trust scores plummet globally** | Misconfigured thresholds / growth allowance | 1. Inspect `RECONCILIATION_SETTINGS` in config<br>2. Run trust scoring unit tests with boundary values<br>3. Check recent trust events in logs<br>4. Verify growth allowance calculations |
-| **Alert flood (overclaim)** | Real fraud wave or adapter returning low metrics | 1. Sample recent PlatformReport entries vs affiliate claims<br>2. Check alert creation logs for patterns<br>3. Verify platform adapter metric accuracy<br>4. Review discrepancy calculation logic |
-| **Queue depth climbs** | Worker stalled, long fetch times, high submission volume | 1. Check worker logs for processing messages<br>2. Monitor platform fetch timing in performance logs<br>3. Verify worker thread is alive<br>4. Check database connection pool status |
-| **Reconciliation log updates failing** | DB schema drift / migrations | 1. Check database connection and transaction logs<br>2. Verify SQLAlchemy model definitions match DB schema<br>3. Check for database constraint violations<br>4. Review recent schema changes |
-| **High latency on submissions** | Database slow queries, external API delays | 1. Check `X-Process-Time` headers in responses<br>2. Monitor database query performance<br>3. Profile platform API response times<br>4. Check for N+1 query patterns |
-| **Circuit breaker flapping** | Intermittent platform issues | 1. Review circuit breaker configuration<br>2. Check platform API error patterns<br>3. Adjust `failure_threshold` or `open_cooldown_seconds`<br>4. Monitor breaker state transitions |
-| **Worker exceptions accumulating** | Code bugs, external service failures | 1. Check `LAST_EXCEPTIONS` in worker module<br>2. Review worker error logs with full stack traces<br>3. Test reconciliation logic with failing scenarios<br>4. Check database connectivity from worker |
+### Logger Configuration
 
-### Debug Commands
+**File**: `app/utils/logger.py`
 
-```bash
-# Check application health
-curl http://localhost:8000/health/detailed
+**Features**:
+- **JSONFormatter**: Structured JSON logging for production with timestamps, levels, and metadata
+- **StructuredLogger**: Wrapper class providing typed logging methods with extra data support
+- **RotatingFileHandler**: Automatic log rotation (10MB files, 5 backups)
+- **Multi-handler Support**: Console + file logging with different formats
 
-# Check circuit breaker state (if debug endpoint added)
-curl http://localhost:8000/debug/circuit-breakers
-
-# Monitor logs in real-time
-tail -f logs/app.log | jq '.message'
-
-# Check worker status
-ps aux | grep reconciliation-worker
-
-# Database connection test
-python -c "from app.database import SessionLocal; db = SessionLocal(); db.execute('SELECT 1'); print('DB OK')"
-```
-
-### Log Analysis Patterns
-
-```bash
-# Find reconciliation failures
-grep "Reconciliation job failed" logs/app.log
+**Setup**:
+```python
+from app.utils import setup_logging, get_logger
 
 # Check platform fetch performance
 grep "Performance: platform_fetch" logs/app.log | jq '.duration_ms'
