@@ -124,7 +124,7 @@ docker compose down
 Service endpoints:
 * API: http://localhost:8000
 * Docs: http://localhost:8000/docs
-* Postgres: localhost:5432 (user/pass: postgres / postgres unless overridden)
+* Postgres: localhost:5432 (user/pass: postgres / postgres unless overridden) [Default DB is sqlite]
 * Redis: localhost:6379
 
 Environment tweaks (edit `.env`):
