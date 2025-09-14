@@ -80,7 +80,7 @@ Legend: (P1 = Core MVP / high impact, P2 = Enhanced MVP, P3 = Post-MVP / future)
 | Automated clawback recommendations | P3 | Fraud prevention | 📋 Post MVP | Based on trust scores and discrepancies |
 | Bulk data import/export | P3 | Administrative tools | 📋 Post MVP | For data migration and reporting |
 | Real-time reconciliation status | P2 | User feedback | 📋 Post MVP | WebSocket updates for long-running jobs |
-| Observability extensions (metrics, webhooks) | 📋 Post MVP | Detailed metrics |
+| Observability extensions (metrics, webhooks) | P2 | Detailed metrics | 📋 Post MVP |  |
 
 
 ## 9. Release & Deployment
