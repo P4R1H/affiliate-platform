@@ -28,6 +28,25 @@ poetry run uvicorn app.main:app --reload
 The API will be available at: http://localhost:8000
 - API Documentation: http://localhost:8000/docs
 - Alternative docs: http://localhost:8000/redoc
+- Health check: http://localhost:8000/health
+
+### Test the API
+```bash
+# Health check
+curl http://localhost:8000/health
+
+# View API documentation in browser
+open http://localhost:8000/docs
+```
+
+### Optional: Discord Bot Setup
+```bash
+# Set Discord bot token (optional)
+echo "DISCORD_BOT_TOKEN=your_bot_token_here" >> .env
+echo "ENABLE_DISCORD_BOT=true" >> .env
+
+# Bot will be available for affiliate reporting via Discord
+```
 
 ## Detailed Installation
 
@@ -108,7 +127,14 @@ poetry shell
 #### SQLite (Development - Default)
 No additional setup required. SQLite database files are created automatically in the project directory.
 
-#### PostgreSQL (Production)
+**Default Configuration:**
+```bash
+DATABASE_URL=sqlite:///./test.db
+```
+
+The application will automatically create the database schema on first run.
+
+#### PostgreSQL (Production - Optional)
 
 **Install PostgreSQL:**
 
@@ -141,25 +167,37 @@ GRANT ALL PRIVILEGES ON DATABASE affiliate_reconciliation TO affiliate_user;
 ```
 
 **Update Configuration:**
-Create `.env` file in project root:
 ```bash
 DATABASE_URL=postgresql://affiliate_user:secure_password@localhost/affiliate_reconciliation
 ```
 
+**Note:** The application uses SQLAlchemy, so it supports both SQLite (development) and PostgreSQL (production) seamlessly. Schema migrations are handled automatically.
+
 ### Environment Configuration
 
-Create a `.env` file in the project root:
+Create a `.env` file in the project root with the following variables:
 
 ```bash
-# Database Configuration
+# Database Configuration (SQLite by default)
 DATABASE_URL=sqlite:///./test.db
 
-# Logging Configuration  
+# Logging Configuration
 LOG_LEVEL=INFO
 LOG_FILE=logs/app.log
 
 # Security
 SECRET_KEY=your-secret-key-change-in-production
+
+# API Keys for Affiliates
+API_KEY_1=test_key_123
+API_KEY_2=another_test_key
+
+# Discord Bot Configuration (Optional)
+ENABLE_DISCORD_BOT=false
+DISCORD_BOT_TOKEN=your_bot_token_here
+DISCORD_COMMAND_GUILDS=123456789,987654321
+API_BASE_URL=http://localhost:8000/api/v1
+BOT_INTERNAL_TOKEN=internal_bot_token
 
 # Mock Integration Settings
 INTEGRATIONS_RANDOM_SEED=12345
@@ -168,15 +206,46 @@ MOCK_FAILURE_RATE=0.05
 # Network Timeouts
 REDDIT_LINK_RESOLVE_TIMEOUT=10
 
-# CORS Origins (comma-separated)
-CORS_ORIGINS=http://localhost:3000,http://localhost:8080
+# Reconciliation Settings
+RECONCILIATION_SETTINGS_BASE_TOLERANCE_PCT=0.05
+RECONCILIATION_SETTINGS_OVERCLAIM_THRESHOLD_PCT=0.20
 
-# Optional: Real Platform API Keys (when migrating from mocks)
-# REDDIT_CLIENT_ID=your_reddit_client_id
-# REDDIT_CLIENT_SECRET=your_reddit_client_secret
-# INSTAGRAM_ACCESS_TOKEN=your_instagram_token
-# YOUTUBE_API_KEY=your_youtube_api_key
-# TWITTER_BEARER_TOKEN=your_twitter_token
+# Trust Scoring
+TRUST_SCORING_MIN_SCORE=0.0
+TRUST_SCORING_MAX_SCORE=1.0
+
+# Queue Settings
+QUEUE_SETTINGS_MAX_IN_MEMORY=5000
+QUEUE_SETTINGS_WARN_DEPTH=1000
+
+# Alerting
+ALERTING_SETTINGS_PLATFORM_DOWN_ESCALATION_MINUTES=120
+
+# Circuit Breaker
+CIRCUIT_BREAKER_FAILURE_THRESHOLD=5
+CIRCUIT_BREAKER_OPEN_COOLDOWN_SECONDS=60
+CIRCUIT_BREAKER_HALF_OPEN_PROBE_COUNT=3
+
+# CORS Origins (for web frontend)
+CORS_ORIGINS=http://localhost:3000,http://localhost:8080
+```
+
+### Optional Production Configuration
+
+For production deployments, also configure:
+
+```bash
+# PostgreSQL (if using external database)
+DATABASE_URL=postgresql://user:password@localhost/dbname
+
+# Real Platform API Keys (replace mocks)
+REDDIT_CLIENT_ID=your_reddit_client_id
+REDDIT_CLIENT_SECRET=your_reddit_client_secret
+INSTAGRAM_ACCESS_TOKEN=your_instagram_token
+META_ACCESS_TOKEN=your_meta_token
+YOUTUBE_API_KEY=your_youtube_api_key
+TIKTOK_ACCESS_TOKEN=your_tiktok_token
+X_BEARER_TOKEN=your_twitter_token
 ```
 
 ### Verify Installation
@@ -213,9 +282,11 @@ poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
 
 ## Production Deployment
 
-### Production Environment Setup
+### Simple Production Setup
 
-#### Using Docker (Recommended)
+For MVP production deployment, you can use a simple approach:
+
+#### Using Docker (Recommended for MVP)
 
 **Create Dockerfile:**
 ```dockerfile
@@ -243,10 +314,8 @@ RUN poetry install --no-dev
 # Copy application code
 COPY . .
 
-# Create non-root user
-RUN useradd --create-home --shell /bin/bash app
-RUN chown -R app:app /app
-USER app
+# Create logs directory
+RUN mkdir -p logs
 
 # Expose port
 EXPOSE 8000
@@ -255,73 +324,36 @@ EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 ```
 
-**Create docker-compose.yml:**
-```yaml
-version: '3.8'
-
-services:
-  app:
-    build: .
-    ports:
-      - "8000:8000"
-    environment:
-      - DATABASE_URL=postgresql://affiliate_user:secure_password@db:5432/affiliate_reconciliation
-      - LOG_LEVEL=INFO
-      - SECRET_KEY=${SECRET_KEY}
-    depends_on:
-      - db
-    volumes:
-      - ./logs:/app/logs
-
-  db:
-    image: postgres:15
-    environment:
-      - POSTGRES_DB=affiliate_reconciliation
-      - POSTGRES_USER=affiliate_user
-      - POSTGRES_PASSWORD=secure_password
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-
-volumes:
-  postgres_data:
-```
-
-**Deploy with Docker:**
+**Build and Run:**
 ```bash
-# Build and start services
-docker-compose up -d
+# Build Docker image
+docker build -t affiliate-platform .
 
-# View logs
-docker-compose logs -f app
-
-# Stop services
-docker-compose down
+# Run container
+docker run -d \
+  --name affiliate-platform \
+  -p 8000:8000 \
+  -v $(pwd)/logs:/app/logs \
+  -e DATABASE_URL=sqlite:///./prod.db \
+  -e SECRET_KEY=your-production-secret-key \
+  affiliate-platform
 ```
 
 #### Manual Production Setup
 
-**1. Server Setup (Ubuntu 20.04):**
+**1. Server Setup:**
 ```bash
-# Update system
-sudo apt update && sudo apt upgrade -y
-
 # Install dependencies
-sudo apt install -y python3.11 python3.11-venv nginx postgresql redis-server
+sudo apt update
+sudo apt install -y python3.11 python3.11-venv nginx
 
-# Create application user
-sudo useradd --system --group --home /opt/affiliate-platform affiliate
-
-# Create directories
-sudo mkdir -p /opt/affiliate-platform/{app,logs,venv}
-sudo chown -R affiliate:affiliate /opt/affiliate-platform
+# Create application directory
+sudo mkdir -p /opt/affiliate-platform
+sudo chown $USER:$USER /opt/affiliate-platform
 ```
 
 **2. Application Setup:**
 ```bash
-# Switch to application user
-sudo -u affiliate bash
 cd /opt/affiliate-platform
 
 # Create virtual environment
@@ -332,38 +364,22 @@ source venv/bin/activate
 pip install poetry
 
 # Clone and install application
-git clone <repository-url> app
-cd app
+git clone <repository-url> .
 poetry install --no-dev
+
+# Create .env file with production settings
+cp .env.example .env
+# Edit .env with production values
 ```
 
-**3. Systemd Service:**
-
-Create `/etc/systemd/system/affiliate-platform.service`:
-```ini
-[Unit]
-Description=Affiliate Reconciliation Platform
-After=network.target postgresql.service
-Requires=postgresql.service
-
-[Service]
-Type=notify
-User=affiliate
-Group=affiliate
-WorkingDirectory=/opt/affiliate-platform/app
-Environment=PATH=/opt/affiliate-platform/venv/bin
-ExecStart=/opt/affiliate-platform/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 4
-ExecReload=/bin/kill -HUP $MAINPID
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
+**3. Start Application:**
+```bash
+# Start with uvicorn
+source venv/bin/activate
+uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-**4. Nginx Configuration:**
-
-Create `/etc/nginx/sites-available/affiliate-platform`:
+**4. Basic Nginx Proxy (Optional):**
 ```nginx
 server {
     listen 80;
@@ -374,30 +390,8 @@ server {
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    # Health check endpoint
-    location /health {
-        proxy_pass http://127.0.0.1:8000/health;
-        access_log off;
     }
 }
-```
-
-**5. Enable and Start Services:**
-```bash
-# Enable Nginx site
-sudo ln -s /etc/nginx/sites-available/affiliate-platform /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl reload nginx
-
-# Start application service
-sudo systemctl enable affiliate-platform
-sudo systemctl start affiliate-platform
-
-# Check status
-sudo systemctl status affiliate-platform
 ```
 
 ### SSL/TLS Configuration
@@ -632,10 +626,9 @@ sqlalchemy.exc.OperationalError: could not connect to server
 ```
 
 **Solutions:**
-- Check PostgreSQL is running: `sudo systemctl status postgresql`
-- Verify connection string in `.env`
-- Check firewall settings
-- Verify user permissions in PostgreSQL
+- For SQLite (default): Ensure the application has write permissions in the project directory
+- For PostgreSQL: Check PostgreSQL is running and connection string is correct
+- Verify DATABASE_URL in .env file
 
 **2. Port Already in Use:**
 ```
@@ -660,8 +653,8 @@ ModuleNotFoundError: No module named 'app'
 ```
 
 **Solutions:**
-- Ensure virtual environment is activated
-- Run from correct directory
+- Ensure you're running from the project root directory
+- Activate Poetry shell: `poetry shell`
 - Reinstall dependencies: `poetry install`
 
 **4. Permission Errors:**
@@ -674,10 +667,15 @@ PermissionError: [Errno 13] Permission denied: 'logs/app.log'
 # Create logs directory
 mkdir -p logs
 
-# Fix permissions
-sudo chown -R affiliate:affiliate /opt/affiliate-platform/logs
-sudo chmod 755 /opt/affiliate-platform/logs
+# Fix permissions (if needed)
+chmod 755 logs
 ```
+
+**5. Discord Bot Not Working:**
+- Check ENABLE_DISCORD_BOT=true in .env
+- Verify DISCORD_BOT_TOKEN is set correctly
+- Ensure bot has proper permissions in Discord server
+- Check logs for Discord-related errors
 
 ### Health Checks
 
@@ -686,35 +684,27 @@ sudo chmod 755 /opt/affiliate-platform/logs
 # Basic health check
 curl http://localhost:8000/health
 
-# Detailed health check  
-curl http://localhost:8000/health/detailed
-
-# Check specific endpoints
-curl -H "Authorization: Bearer test_key" http://localhost:8000/api/v1/campaigns/
+# Should return: {"status": "healthy", "timestamp": "..."}
 ```
 
-**System Health:**
+**API Testing:**
 ```bash
-# Check disk space
-df -h
+# Test API with authentication
+curl -H "Authorization: Bearer test_key_123" http://localhost:8000/api/v1/campaigns/
 
-# Check memory usage
-free -h
-
-# Check CPU usage
-top
-
-# Check service status
-sudo systemctl status affiliate-platform postgresql nginx
+# Test reconciliation endpoint
+curl -X POST http://localhost:8000/api/v1/reports/ \
+  -H "Authorization: Bearer test_key_123" \
+  -H "Content-Type: application/json" \
+  -d '{"campaign_id": 1, "platform_post_url": "https://example.com", "claimed_views": 100, "claimed_clicks": 10, "claimed_conversions": 1}'
 ```
 
 ### Getting Help
 
 **Log Files:**
-- Application: `/opt/affiliate-platform/logs/app.log`
-- System: `journalctl -u affiliate-platform`
-- Nginx: `/var/log/nginx/error.log`
-- PostgreSQL: `/var/log/postgresql/postgresql-15-main.log`
+- Application: `logs/app.log`
+- SQLite database: `test.db` (can be viewed with DB browser)
+- Test output: Check pytest results
 
 **Debug Mode:**
 ```bash
@@ -723,8 +713,20 @@ export LOG_LEVEL=DEBUG
 poetry run uvicorn app.main:app --reload --log-level debug
 ```
 
+**Useful Commands:**
+```bash
+# View recent logs
+tail -f logs/app.log
+
+# Run specific tests
+poetry run pytest tests/test_unit_backoff.py -v
+
+# Check database content
+poetry run python -c "from app.database import SessionLocal; s = SessionLocal(); print(s.query(s.query_property.mapper.class_).count())"
+```
+
 **Support Resources:**
-- Check existing documentation in `docs/`
+- Check API documentation at http://localhost:8000/docs
 - Review test files for usage examples
 - See [Operations & Observability](OPERATIONS_AND_OBSERVABILITY.md) for monitoring guidance
 
@@ -732,24 +734,26 @@ poetry run uvicorn app.main:app --reload --log-level debug
 
 After successful installation:
 
-1. **Create Initial Data:**
-   - Create admin affiliate account
-   - Set up platforms and campaigns
-   - Test submission flow
+1. **Test the Core Features:**
+   - Submit affiliate reports via API
+   - Test Discord bot integration (if enabled)
+   - Monitor reconciliation jobs and results
+   - Check alerts for discrepancies
 
-2. **Configure Monitoring:**
-   - Set up log aggregation
-   - Configure health check alerts
-   - Monitor performance metrics
+2. **Explore the API:**
+   - Review API documentation at `/docs`
+   - Test different endpoints with various scenarios
+   - Understand the data flow and reconciliation process
 
-3. **Security Review:**
-   - Review and update default passwords
-   - Configure SSL certificates
-   - Set up backup procedures
+3. **Monitor and Debug:**
+   - Check application logs in `logs/app.log`
+   - Use health check endpoint for status monitoring
+   - Run tests to ensure everything works correctly
 
-4. **Scale Planning:**
-   - Monitor resource usage
-   - Plan for horizontal scaling
-   - Consider external queue system (Redis/SQS)
+4. **Production Considerations:**
+   - Set up proper environment variables for production
+   - Consider using PostgreSQL for production workloads
+   - Configure proper logging and monitoring
+   - Set up regular backups of the database
 
 For detailed operational procedures, see [Operations & Observability](OPERATIONS_AND_OBSERVABILITY.md).

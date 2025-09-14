@@ -1,6 +1,26 @@
 # Testing Strategy
 
-How we ensure correctness, resilience, and regression detection across the reconciliation platform.
+How we ensure correctness, resilience, and regression detection across the reconciliation p## 11. Sample Assertion Patterns
+```python
+# Wait for reconciliation completion
+log = wait_for(lambda: db_session.query(ReconciliationLog).filter_by(affiliate_report_id=report_id).first())
+assert log and log.status == ReconciliationStatus.MATCHED
+
+# Trust score progression
+db_session.refresh(affiliate)
+after_match = float(affiliate.trust_score)
+assert after_match >= base_trust  # Trust increased
+
+# Alert verification
+alert = db_session.query(Alert).filter_by(reconciliation_log_id=log.id).first()
+assert alert and alert.alert_type == AlertType.HIGH_DISCREPANCY
+
+# Confidence ratio for partial data
+assert log.confidence_ratio is not None and float(log.confidence_ratio) < 1
+
+# Retry scheduling for missing data
+assert log.scheduled_retry_at is not None
+```m.
 
 ## 1. Philosophy
 | Principle | Implementation |
@@ -12,14 +32,14 @@ How we ensure correctness, resilience, and regression detection across the recon
 | Representative risk paths | Overclaim, partial, missing, retry, alert escalation, trust evolution all covered |
 
 ## 2. Test Pyramid
-| Layer | Files (Examples) | Focus |
-|-------|------------------|-------|
-| Unit | `test_unit_*` (queue, circuit_breaker, discrepancy_classifier, trust_scoring, backoff) | Pure functions & data structures |
-| Integration | `test_integration_reconciliation.py` | Status classification, trust, alert creation w/o real external APIs (worker replaced before refactor → now worker path adopted) |
-| API Edge Cases | `test_edge_cases.py` | Conflicts, platform not in campaign, alert resolution API |
-| End-to-End (Scenario) | `test_full_system.py` | Sequential multi-status journey & trust/alert assertions through queue + worker |
-| RBAC & Uniqueness | `test_rbac_and_uniqueness.py` | Uniqueness constraints, duplicate submissions |
-| E2E Legacy | `test_e2e_flow.py` | Earlier black-box flow (kept for redundancy) |
+| Layer | Files | Focus | Runtime |
+|-------|-------|-------|---------|
+| Unit | `test_unit_*` (backoff, circuit_breaker, discrepancy_classifier, priority_queue, trust_scoring) | Pure functions & data structures | <1s each |
+| Integration | `test_integration_reconciliation.py` | Status classification, trust, alert creation with mocked adapters | ~2-3s |
+| API Edge Cases | `test_edge_cases.py` | Conflicts, platform validation, alert resolution API | ~1-2s |
+| End-to-End | `test_full_system.py` | Sequential multi-status journey through queue + worker | ~5s |
+| RBAC & Auth | `test_rbac_and_uniqueness.py`, `test_bot_token_auth.py` | Authentication, uniqueness constraints, duplicate submissions | ~1-2s |
+| Legacy E2E | `test_e2e_flow.py` | Earlier black-box flow (maintained for redundancy) | ~3-4s |
 
 ## 3. Deterministic Adapter Patching
 All platform metrics sourced via `install_mock_adapter("reddit", {...})` which monkeypatches `fetch_post_metrics` in `app.integrations.<platform>`.
@@ -30,59 +50,91 @@ All platform metrics sourced via `install_mock_adapter("reddit", {...})` which m
 | Repeatability | Same inputs yield identical classification & trust deltas |
 
 ## 4. Isolation Mechanics
-Autouse fixture (`_isolate_test_state`) performs:
-- Queue purge: removes residual jobs.
-- Circuit breaker state clear: prevents cross-test open circuit causing false missing statuses.
-- Distinct affiliates & posts per test to avoid uniqueness collisions.
+Autouse fixture (`_isolate_test_state`) in `conftest.py` performs:
+- **Queue purge**: Removes residual jobs between tests using `queue.purge()`
+- **Circuit breaker reset**: Clears failure counters and state with `GLOBAL_CIRCUIT_BREAKER._states.clear()`
+- **Database isolation**: Uses file-based SQLite (`test_worker.db`) for thread-safe multi-connection access
+- **Session rebinding**: Replaces `SessionLocal` in both app and worker modules to use test database
+- **Worker thread**: Starts daemon worker thread that processes jobs from test queue
+
+**Pre/post-test cleanup**: Ensures no cross-test contamination of in-memory state.
 
 ## 5. Worker vs Direct Engine Calls
-Originally, integration tests invoked `run_reconciliation` directly (faster, deterministic). Updated strategy prefers **worker-driven** path to:
-- Validate queue enqueue + worker consumption.
-- Surface threading / session binding issues early.
-- Mirror production black-box flow.
-Remaining direct calls noted as legacy but minimized.
+**Current Strategy**: Tests prefer **worker-driven** path to validate end-to-end flow:
+- Full API request → queue enqueue → worker consumption → reconciliation processing
+- Validates threading, session binding, and production-like execution path
+- Surfaces integration issues early (database sessions, queue timing, etc.)
+
+**Legacy Direct Calls**: Some integration tests still use `run_reconciliation()` directly:
+- Faster execution for focused logic testing
+- Used in `test_integration_reconciliation.py` for specific scenarios
+- Gradually being migrated to full worker path for consistency
+
+**Test Database**: Uses file-based SQLite (`test_worker.db`) to support:
+- Multi-threaded access (test thread + worker thread)
+- Session sharing between API calls and background processing
+- Automatic cleanup between test runs
 
 ## 6. Coverage of Core Requirements
-| Requirement | Test(s) |
-|------------|---------|
-| Perfect match trust increase | Full system & trust evolution integration |
-| Overclaim classification & alert | Full system, overclaim integration test |
-| High discrepancy & escalation | High discrepancy repeat scenario test |
-| Partial data handling | Partial/incomplete specific test & full system step D |
-| Missing data retry scheduling | Missing data integration test & full system step E |
-| Alert resolution API | `test_alert_resolution_flow` |
-| Queue priority basic functionality | Unit priority queue test |
-| Circuit breaker open logic | Unit circuit breaker test; implicit via isolation fixture |
+| Requirement | Test Coverage | Files |
+|------------|----------------|-------|
+| Multi-platform integrations | Mock adapters for Reddit, Instagram, Meta | `test_full_system.py`, `test_integration_reconciliation.py` |
+| Discord affiliate reporting | Bot token authentication | `test_bot_token_auth.py` |
+| Direct API affiliate reporting | API key authentication, submission validation | `test_rbac_and_uniqueness.py`, `test_edge_cases.py` |
+| Automated reconciliation | Queue + worker processing | `test_full_system.py` |
+| Discrepancy detection | Classification algorithm, trust scoring | `test_unit_discrepancy_classifier.py`, `test_full_system.py` |
+| Alert mechanism | Configurable thresholds, severity levels | `test_full_system.py`, `test_integration_reconciliation.py` |
+| Data quality validation | Duplicate detection, input sanitization | `test_edge_cases.py`, `test_rbac_and_uniqueness.py` |
 
 ## 7. Edge Cases Explicitly Tested
-| Edge Case | Validation |
-|-----------|-----------|
-| Duplicate affiliate email | Conflict status code |
-| Duplicate post submission | 409 conflict test |
-| Platform not in campaign submission | 400 bad request test |
-| Trust monotonic ordering across scenarios | Full system test final assertions |
-| Missing vs incomplete classification divergence | Specific integration tests |
+| Edge Case | Test Coverage | Files |
+|-----------|----------------|-------|
+| Duplicate affiliate email | Uniqueness constraint validation | `test_rbac_and_uniqueness.py` |
+| Duplicate post submission | 409 conflict response | `test_edge_cases.py` |
+| Platform not in campaign | 400 bad request validation | `test_edge_cases.py` |
+| Trust score progression | Monotonic ordering across scenarios | `test_full_system.py` |
+| Missing vs partial data | Classification divergence | `test_integration_reconciliation.py` |
+| Overclaim detection | Significant affiliate inflation | `test_full_system.py` |
+| Circuit breaker behavior | Failure threshold and recovery | `test_unit_circuit_breaker.py` |
+| Queue priority ordering | Lower numeric = higher priority | `test_unit_priority_queue.py` |
+| Discord bot authentication | Token validation and permissions | `test_bot_token_auth.py` |
 
-## 8. Gaps / Future Test Additions
-| Gap | Planned Test |
-|-----|-------------|
-| Rate limit handling | Simulate adapter raising rate limit specific message; assert rate_limited flag |
-| Auth error terminal | Simulate auth error -> ensure no retry scheduled |
-| Retry schedule math correctness | Parameterized test verifying minute offsets for attempts 1..N |
-| Duplicate job idempotency | Enqueue same report twice; assert single trust delta |
-| Circuit breaker half-open probe behavior | Force rapid failures then success probe |
+## 8. Future Test Enhancements
+| Enhancement | Rationale | Priority |
+|-------------|-----------|----------|
+| Rate limit handling tests | Simulate platform rate limiting scenarios | P2 |
+| Auth error terminal tests | Test authentication failure handling | P2 |
+| Retry backoff validation | Verify exponential backoff timing | P2 |
+| Duplicate job idempotency | Ensure no double trust deltas | P2 |
+| Circuit breaker half-open tests | Test recovery behavior | P2 |
+| Performance/load testing | Measure throughput under load | P3 |
+| Multi-platform concurrent tests | Test cross-platform scenarios | P3 |
 
 ## 9. Performance Considerations
-- Backoff sleeps in PlatformFetcher are real (`time.sleep`); tests controlling retries keep attempts minimal to stay fast.
-- Full system test runtime ~5s due to intentional fast polling + single worker.
-- Potential optimization: monkeypatch backoff function to zero delay in test profile (not yet required).
+- **Unit tests**: <1s each, pure function testing
+- **Integration tests**: ~2-3s, includes database operations and worker processing
+- **Full system test**: ~5s due to intentional polling (`POLL_INTERVAL = 0.05`, `TIMEOUT = 4.0`)
+- **Database**: File-based SQLite (`test_worker.db`) for thread-safe multi-connection access
+- **Cleanup**: Automatic database creation/dropping between test sessions
+- **Isolation**: Pre/post-test cleanup prevents cross-test contamination
+
+**Optimization Notes**: 
+- Backoff sleeps in PlatformFetcher use real `time.sleep()` but are minimal in test scenarios
+- No need for monkeypatching delays as test scenarios complete quickly
+- Full test suite runs in ~15-20 seconds on typical development hardware
 
 ## 10. Testing Utilities
-| Utility | Purpose |
-|---------|--------|
-| `wait_for(predicate)` | Poll until reconciliation log exists / status reached |
-| Adapter patch installers | Deterministic metrics & failure injection |
-| Factory fixtures (platform, affiliate, campaign) | Concise entity creation with uniqueness safeguards |
+| Utility | Purpose | Location |
+|---------|---------|----------|
+| `wait_for(predicate)` | Poll until condition met (reconciliation complete, etc.) | `test_full_system.py` |
+| `install_mock_adapter()` | Deterministic metrics & failure injection for platform adapters | `test_full_system.py` |
+| `platform_factory` | Create platform entities with uniqueness safeguards | `conftest.py` |
+| `affiliate_factory` | Create affiliate users with unique names/emails | `conftest.py` |
+| `campaign_factory` | Create campaigns with platform associations | `conftest.py` |
+| `auth_header` | Generate authentication headers for API tests | `conftest.py` |
+| `client` | FastAPI TestClient for API testing | `conftest.py` |
+| `db_session` | SQLAlchemy session for database operations | `conftest.py` |
+| `reconciliation_queue` | Priority queue instance for testing | `conftest.py` |
 
 ## 11. Sample Assertion Patterns
 ```python
@@ -92,38 +144,61 @@ assert float(affiliate.trust_score) < previous_trust
 ```
 
 ## 12. Flakiness Mitigation Choices
-| Issue | Mitigation |
-|-------|-----------|
-| Threaded DB session mismatch | Switched to file-based SQLite | 
-| Circuit breaker leakage across tests | Autouse reset fixture |
-| Timing race for reconciliation log | Polling utility with timeout |
+| Issue | Mitigation | Implementation |
+|-------|-----------|----------------|
+| Threaded DB session conflicts | File-based SQLite with `check_same_thread=False` | `test_worker.db` for multi-threaded access |
+| Circuit breaker leakage | Autouse reset fixture | `GLOBAL_CIRCUIT_BREAKER._states.clear()` |
+| Timing race for reconciliation log | Polling utility with timeout | `wait_for()` with configurable timeout |
+| Queue state contamination | Pre/post-test purge | `queue.purge()` in isolation fixture |
+| Session binding issues | Dynamic SessionLocal rebinding | Replaces `SessionLocal` in app and worker modules |
 
 ## 13. Guidelines for New Tests
-1. Prefer black-box (API + worker) unless measuring pure function logic.
-2. Use adapter patch, not direct metric injection into DB.
-3. Avoid asserting exact trust score floating points after multiple deltas if config may change— assert relative ordering.
-4. Keep test names descriptive (scenario + expected outcome).
-5. Add fixtures instead of duplicating object construction boilerplate.
+1. **Prefer black-box testing**: Use API + worker path unless testing pure functions
+2. **Use factory fixtures**: Leverage `platform_factory`, `affiliate_factory`, `campaign_factory` for consistent test data
+3. **Mock at adapter level**: Use `install_mock_adapter()` for deterministic platform responses
+4. **Test realistic scenarios**: Focus on actual user journeys and edge cases
+5. **Assert meaningful outcomes**: Check status, trust changes, alerts, retries - not just implementation details
+6. **Keep tests focused**: One scenario per test, clear naming (scenario + expected outcome)
+7. **Handle async operations**: Use `wait_for()` for reconciliation completion
+8. **Test isolation**: Rely on autouse fixtures for automatic cleanup
+9. **Document complex scenarios**: Add comments explaining test setup and assertions
+10. **Performance matters**: Keep individual tests fast, full suite under 30 seconds
 
 ## 14. Local Developer Workflow
-```
-# Run fast unit layer
-pytest tests/test_unit_*.py -q
+```bash
+# Quick unit test run (fast feedback)
+poetry run pytest tests/test_unit_*.py -q
 
-# Run integration & full system only
-pytest tests/test_integration_reconciliation.py tests/test_full_system.py -q
+# Integration tests only
+poetry run pytest tests/test_integration_reconciliation.py -q
 
-# Full regression
-pytest -q
+# Full system end-to-end test
+poetry run pytest tests/test_full_system.py -q
+
+# All tests with coverage
+poetry run pytest --cov=app --cov-report=html
+
+# Run specific test file
+poetry run pytest tests/test_edge_cases.py -v
+
+# Run tests matching pattern
+poetry run pytest -k "test_full_system_flow" -v
+
+# Debug mode (stop on first failure)
+poetry run pytest -x --pdb
 ```
+
+**Test Database**: Tests use `test_worker.db` (file-based SQLite) for thread-safe operations. Database is automatically created/dropped between test sessions.
 
 ## 15. Continuous Improvement Backlog
-| Improvement | Value |
-|------------|-------|
-| Coverage report integration (pytest-cov) | Quantify gaps |
-| Property-based tests for classifier | Stress boundary conditions |
-| Synthetic load test harness | Measure queue saturation behavior |
-| Mutation testing (e.g., mutmut) | Detect assertion weakness |
+| Improvement | Value | Priority |
+|------------|-------|----------|
+| Coverage reporting integration | Quantify test gaps with coverage metrics | P2 |
+| Property-based testing | Stress test edge cases with generated inputs | P3 |
+| Test performance optimization | Reduce full test suite runtime | P2 |
+| Mutation testing | Detect weak assertions (mutmut or similar) | P3 |
+| Visual test reporting | HTML reports with failure screenshots | P2 |
+| CI/CD integration | Automated testing in deployment pipeline | P1 |
 
 ---
 Next: `OPERATIONS_AND_OBSERVABILITY.md`.

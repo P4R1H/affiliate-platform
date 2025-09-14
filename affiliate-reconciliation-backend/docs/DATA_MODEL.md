@@ -5,7 +5,8 @@ This document describes the persistent domain model, rationale for each entity, 
 ## 1. Entity Overview
 | Entity | Purpose | Cardinality Highlights |
 |--------|---------|-----------------------|
-| Affiliate | Participant submitting performance claims | 1↔N AffiliateReports, 1↔N Alerts |
+| User (Affiliate) | Participant submitting performance claims | 1↔N AffiliateReports, 1↔N Alerts, 1↔N Campaigns (created) |
+| Client | Client organization | 1↔N Users, 1↔N Campaigns |
 | Campaign | Marketing initiative grouping posts | N↔M Platforms, 1↔N Posts |
 | Platform | Social / traffic source (reddit, instagram, etc.) | N↔M Campaigns, 1↔N Posts |
 | Post | A concrete submitted creative / link instance | 1↔1 AffiliateReport (current MVP), 1↔N PlatformReports |
@@ -16,115 +17,159 @@ This document describes the persistent domain model, rationale for each entity, 
 
 ## 2. Relationship Diagram (Text)
 ```
-Affiliate --< Post >-- Campaign
+Client --< User >-- Campaign (created_by)
     |            
     |            >-- Platform (through CampaignPlatforms association)
     |
-    >-- AffiliateReport --(1:1)--> ReconciliationLog --(0/1:1)--> Alert
+    >-- Campaign --< Post >-- AffiliateReport --(1:1)--> ReconciliationLog --(0/1:1)--> Alert
                       \
                        \-- Post (FK)
 Post --< PlatformReport (one per successful attempt with any data)
 ```
 
 ## 3. Key Tables & Fields
-### Affiliate
+### User (Affiliate)
 | Field | Type | Notes |
 |-------|------|-------|
 | id | int | PK |
-| name | str | Unique constraint (combined with defensive randomization in tests) |
+| client_id | int | FK to Client (nullable for backward compatibility) |
+| name | str | Unique constraint |
 | email | str | Unique |
 | api_key | str | Bearer credential for submission endpoints |
-| trust_score | numeric(?,?) | 0–1 bounded float (config clamps) |
-| accurate_submissions | int | Incremented on PERFECT_MATCH events |
-| last_trust_update | datetime | Auditing trust evolution |
+| trust_score | numeric(5,4) | 0–1 bounded float (config clamps) |
+| total_submissions | int | Total number of submissions made |
+| accurate_submissions | int | Number of accurate submissions |
+| created_at | datetime | UTC timestamp |
+| updated_at | datetime | UTC timestamp (auto-updated) |
 
 ### Campaign
-| Field | Notes |
-|-------|------|
-| id, name, advertiser_name | Basic identity |
-| status | Enum (ACTIVE, etc.) |
-| start_date | For future growth allowances / SLA windows |
-| platforms (relationship) | M:N via association table (not shown here) |
+| Field | Type | Notes |
+|-------|------|-------|
+| id | int | PK |
+| name | str | Campaign name |
+| client_id | int | FK to Client |
+| created_by | int | FK to User (creator) |
+| start_date | date | Campaign start date |
+| end_date | date | Campaign end date (nullable) |
+| impression_cap | int | Maximum impressions allowed (nullable) |
+| cpm | numeric(10,2) | Cost per thousand impressions (nullable) |
+| status | enum | CampaignStatus (ACTIVE, PAUSED, COMPLETED) |
+| created_at | datetime | UTC timestamp |
 
 ### Platform
-| Field | Notes |
-|-------|------|
-| id, name | Name used for dynamic adapter import |
-| api_base_url | Placeholder; useful for future outbound API metadata |
+| Field | Type | Notes |
+|-------|------|-------|
+| id | int | PK |
+| name | str | Platform name (unique, indexed) |
+| api_base_url | str | Base URL for platform API (nullable) |
+| is_active | bool | Whether platform is active (default: true) |
+| api_config | json | API configuration settings (nullable) |
+| created_at | datetime | UTC timestamp |
+
+### Client
+| Field | Type | Notes |
+|-------|------|-------|
+| id | int | PK |
+| name | str | Client organization name (unique, indexed) |
+| created_at | datetime | UTC timestamp |
+| updated_at | datetime | UTC timestamp (auto-updated) |
+
+### Association Tables
+#### campaign_platform_association
+Many-to-many relationship between Campaigns and Platforms.
+| Field | Type | Notes |
+|-------|------|-------|
+| campaign_id | int | FK to Campaign (composite PK) |
+| platform_id | int | FK to Platform (composite PK) |
 
 ### Post
-| Field | Notes |
-|-------|------|
-| id | PK |
-| campaign_id | FK Campaign |
-| affiliate_id | FK Affiliate |
-| platform_id | FK Platform |
-| url | Normalized / original URL submitted |
-| title | Optional title of the post |
-| description | Optional description of the post |
-| is_reconciled | Boolean flag set when terminal reconciliation reached (matched / overclaim / high discrepancy without retry) |
-| __table_args__ | Unique constraint on `campaign_id`, `platform_id`, `url`, `affiliate_id` |
+| Field | Type | Notes |
+|-------|------|-------|
+| id | int | PK |
+| campaign_id | int | FK to Campaign |
+| user_id | int | FK to User (affiliate) |
+| platform_id | int | FK to Platform |
+| url | str | Normalized/original URL submitted |
+| title | str | Optional title of the post |
+| description | str | Optional description of the post |
+| is_reconciled | bool | Boolean flag set when terminal reconciliation reached |
+| created_at | datetime | UTC timestamp |
+| updated_at | datetime | UTC timestamp (auto-updated) |
+| __table_args__ | Unique constraint on `campaign_id`, `platform_id`, `url`, `user_id` |
 
 ### AffiliateReport
 Represents immutable claimed metrics at submission.
-| Field | Notes |
-|-------|------|
-| id | PK |
-| post_id | FK Post (1:1 in current design) |
-| claimed_views / clicks / conversions | Integers as claimed by affiliate |
-| evidence_data | JSON blob for screenshots, links, etc. |
-| suspicion_flags | JSON blob for flags captured during submission validation |
-| submission_method | Enum (API, DISCORD, etc.) |
-| status | Enum (PENDING, VERIFIED, REJECTED) |
-| submitted_at | Timestamp (UTC) |
+| Field | Type | Notes |
+|-------|------|-------|
+| id | int | PK |
+| post_id | int | FK to Post (1:1 in current design) |
+| claimed_views | int | Views claimed by affiliate (default: 0) |
+| claimed_clicks | int | Clicks claimed by affiliate (default: 0) |
+| claimed_conversions | int | Conversions claimed by affiliate (default: 0) |
+| evidence_data | json | JSON blob for screenshots, links, etc. (nullable) |
+| suspicion_flags | json | JSON blob for flags captured during submission validation (nullable) |
+| submission_method | enum | SubmissionMethod (API, DISCORD) |
+| status | enum | ReportStatus (PENDING, VERIFIED, REJECTED) |
+| submitted_at | datetime | UTC timestamp |
 
 ### ReconciliationLog
 One row per AffiliateReport capturing the latest classification + attempt metadata.
-| Field | Notes |
-|-------|------|
-| id | PK |
-| affiliate_report_id | Unique FK -> AffiliateReport |
-| status | Enum `ReconciliationStatus` |
-| attempt_count | Incremented each run |
-| last_attempt_at | Timestamp of last attempt |
-| elapsed_hours | Derived (now - submitted_at) |
-| views_discrepancy / clicks_discrepancy / conversions_discrepancy | Signed difference (claimed - platform_adjusted) |
-| views_diff_pct / clicks_diff_pct / conversions_diff_pct | Percent diff (positive = overclaim, negative = underclaim) |
-| max_discrepancy_pct | Largest non-null diff for severity bucketing |
-| discrepancy_level | LOW / MEDIUM / HIGH / CRITICAL (None for matched or partial) |
-| confidence_ratio | 0–1 fraction of metrics observed (partial data) |
-| missing_fields | JSON: {"fields": [..]} when partial/missing |
-| trust_delta | Float delta applied this attempt (nullable) |
-| platform_report_id | FK to latest PlatformReport (for convenience) |
-| scheduled_retry_at | Next attempt time (nullable) |
-| error_code | Adapter/circuit classification (fetch_error, rate_limited, etc.) |
-| error_message | Free-form diagnostic |
-| rate_limited | Boolean toggle for fetch result |
+| Field | Type | Notes |
+|-------|------|-------|
+| id | int | PK |
+| affiliate_report_id | int | Unique FK to AffiliateReport |
+| status | enum | ReconciliationStatus |
+| attempt_count | int | Incremented each run |
+| last_attempt_at | datetime | Timestamp of last attempt |
+| elapsed_hours | float | Derived (now - submitted_at) |
+| views_discrepancy | int | Signed difference (claimed - platform_adjusted) |
+| clicks_discrepancy | int | Signed difference (claimed - platform_adjusted) |
+| conversions_discrepancy | int | Signed difference (claimed - platform_adjusted) |
+| views_diff_pct | float | Percent diff (positive = overclaim, negative = underclaim) |
+| clicks_diff_pct | float | Percent diff (positive = overclaim, negative = underclaim) |
+| conversions_diff_pct | float | Percent diff (positive = overclaim, negative = underclaim) |
+| max_discrepancy_pct | float | Largest non-null diff for severity bucketing |
+| discrepancy_level | enum | LOW/MEDIUM/HIGH/CRITICAL (None for matched or partial) |
+| confidence_ratio | float | 0–1 fraction of metrics observed (partial data) |
+| missing_fields | json | JSON: {"fields": [..]} when partial/missing |
+| trust_delta | float | Float delta applied this attempt (nullable) |
+| platform_report_id | int | FK to latest PlatformReport (for convenience) |
+| scheduled_retry_at | datetime | Next attempt time (nullable) |
+| error_code | str | Adapter/circuit classification (fetch_error, rate_limited, etc.) |
+| error_message | str | Free-form diagnostic |
+| rate_limited | bool | Boolean toggle for fetch result |
 
 ### PlatformReport
 Historical snapshot of platform metrics returned on a reconciliation attempt when at least one metric is present.
-| Field | Notes |
-|-------|------|
-| id | PK |
-| post_id | FK Post |
-| platform_id | FK Platform |
-| views / clicks / conversions | Captured metrics (0 substituted if None to keep non-null; raw presence encoded in raw_data) |
-| raw_data | JSON dict {views, clicks, conversions} with potential `null` values |
-| created_at | Attempt timestamp |
+| Field | Type | Notes |
+|-------|------|-------|
+| id | int | PK |
+| post_id | int | FK to Post |
+| platform_id | int | FK to Platform |
+| views | int | Captured views metric (0 if None) |
+| clicks | int | Captured clicks metric (0 if None) |
+| conversions | int | Captured conversions metric (0 if None) |
+| raw_data | json | JSON dict {views, clicks, conversions} with potential null values |
+| fetched_at | datetime | Attempt timestamp |
 
 ### Alert
-| Field | Notes |
-|-------|------|
-| id | PK |
-| reconciliation_log_id | FK ReconciliationLog (unique) |
-| affiliate_id / platform_id | For filtering & analytics |
-| alert_type | HIGH_DISCREPANCY / MISSING_DATA |
-| category | FRAUD / DATA_QUALITY / SYSTEM_HEALTH |
-| severity | LOW / MEDIUM / HIGH / CRITICAL |
-| title / message | Human readable context |
-| threshold_breached | JSON capturing triggering metrics (e.g. max_discrepancy_pct) |
-| status | OPEN / RESOLVED (resolution flow future extensibility) |
-| created_at / resolved_at | Audit timeline |
+| Field | Type | Notes |
+|-------|------|-------|
+| id | int | PK |
+| reconciliation_log_id | int | FK to ReconciliationLog |
+| user_id | int | FK to User (for filtering, nullable) |
+| platform_id | int | FK to Platform (for filtering, nullable) |
+| alert_type | enum | AlertType (HIGH_DISCREPANCY, MISSING_DATA, SUSPICIOUS_CLAIM, SYSTEM_ERROR) |
+| title | str | Human readable title |
+| message | str | Human readable message |
+| threshold_breached | json | JSON capturing triggering metrics (nullable) |
+| category | enum | AlertCategory (DATA_QUALITY, FRAUD, SYSTEM_HEALTH) |
+| severity | enum | AlertSeverity (LOW, MEDIUM, HIGH, CRITICAL) |
+| status | enum | AlertStatus (OPEN, RESOLVED) |
+| resolved_by | str | User who resolved the alert (nullable) |
+| resolved_at | datetime | Resolution timestamp (nullable) |
+| resolution_notes | str | Resolution notes (nullable) |
+| created_at | datetime | UTC timestamp |
 
 ## 4. Rationale & Trade-offs
 | Choice | Rationale | Alternative Rejected |
@@ -147,7 +192,7 @@ Historical snapshot of platform metrics returned on a reconciliation attempt whe
 |----------------|----------------------------|-------|
 | Fetch logs by status for dashboard | (status, last_attempt_at DESC) | Pagination support |
 | Retry scheduler scanning | (scheduled_retry_at WHERE scheduled_retry_at IS NOT NULL) | Narrow index |
-| Alert recent high discrepancy scans | (affiliate_id, platform_id, created_at DESC) | Supports repeat escalation lookup |
+| Alert recent high discrepancy scans | (user_id, platform_id, created_at DESC) | Supports repeat escalation lookup |
 | Fraud analytics by discrepancy tier | (discrepancy_level, max_discrepancy_pct) | Histogram-friendly |
 
 ## 7. Data Quality Considerations
@@ -177,7 +222,7 @@ SELECT COUNT(*) FROM alerts WHERE alert_type='HIGH_DISCREPANCY' AND category='FR
 SELECT r.* FROM reconciliation_logs r
 JOIN affiliate_reports ar ON r.affiliate_report_id = ar.id
 JOIN posts p ON ar.post_id = p.id
-WHERE r.discrepancy_level IN ('MEDIUM','HIGH') AND p.affiliate_id = :affId
+WHERE r.discrepancy_level IN ('MEDIUM','HIGH') AND p.user_id = :userId
 ORDER BY r.last_attempt_at DESC LIMIT 50;
 
 -- Average confidence ratio for partial data last 24h

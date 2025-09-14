@@ -534,6 +534,161 @@ PUT /api/v1/alerts/{alert_id}/resolve
 }
 ```
 
+### Get Alert Statistics
+```http
+GET /api/v1/alerts/stats
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "total_alerts": 45,
+    "by_status": {
+      "OPEN": 12,
+      "RESOLVED": 33
+    },
+    "by_type": {
+      "HIGH_DISCREPANCY": 18,
+      "MISSING_DATA": 15,
+      "TRUST_THRESHOLD": 12
+    },
+    "recent_24h": 8,
+    "generated_at": "2024-01-15T11:30:00Z"
+  }
+}
+```
+
+## Clients
+
+### Create Client (Admin Only)
+```http
+POST /api/v1/clients/
+```
+
+**Request Body:**
+```json
+{
+  "name": "TechCorp Inc",
+  "contact_email": "admin@techcorp.com",
+  "contact_name": "Jane Smith",
+  "description": "Technology marketing client"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Client created successfully",
+  "data": {
+    "id": 1,
+    "name": "TechCorp Inc",
+    "contact_email": "admin@techcorp.com",
+    "contact_name": "Jane Smith",
+    "description": "Technology marketing client",
+    "is_active": true,
+    "created_at": "2024-01-15T10:30:00Z",
+    "user_count": 0
+  }
+}
+```
+
+### List Clients (Admin Only)
+```http
+GET /api/v1/clients/
+```
+
+**Query Parameters:**
+- `skip`: Number of clients to skip (default: 0)
+- `limit`: Number of clients to return (default: 100)
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "name": "TechCorp Inc",
+      "contact_email": "admin@techcorp.com",
+      "contact_name": "Jane Smith",
+      "is_active": true,
+      "user_count": 5,
+      "created_at": "2024-01-15T10:30:00Z"
+    }
+  ]
+}
+```
+
+### Get Client Details (Admin Only)
+```http
+GET /api/v1/clients/{client_id}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "id": 1,
+    "name": "TechCorp Inc",
+    "contact_email": "admin@techcorp.com",
+    "contact_name": "Jane Smith",
+    "description": "Technology marketing client",
+    "is_active": true,
+    "created_at": "2024-01-15T10:30:00Z",
+    "users": [
+      {
+        "id": 2,
+        "name": "John Affiliate",
+        "email": "john@techcorp.com",
+        "role": "AFFILIATE",
+        "is_active": true
+      }
+    ],
+    "campaigns": [
+      {
+        "id": 1,
+        "name": "Summer Sale 2024",
+        "status": "ACTIVE",
+        "start_date": "2024-06-01",
+        "end_date": "2024-08-31"
+      }
+    ]
+  }
+}
+```
+
+### Update Client (Admin Only)
+```http
+PUT /api/v1/clients/{client_id}
+```
+
+**Request Body:**
+```json
+{
+  "name": "TechCorp Solutions Inc",
+  "contact_email": "newadmin@techcorp.com",
+  "contact_name": "John Doe",
+  "description": "Updated technology marketing client"
+}
+```
+
+### Delete Client (Admin Only)
+```http
+DELETE /api/v1/clients/{client_id}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Client deleted successfully"
+}
+```
+
 ## Error Codes
 
 | Code | Description |

@@ -1,7 +1,18 @@
 # Architecture Overview
 
 ## 1. Purpose & Scope
-This document orients a new engineer in under 15 minutes to the platform's domain model, moving parts, and the life of a submission from API ingest to reconciliation outcome, trust score shifts, and alert emission.
+This document orients a new engineer in under 15 minutes to the## 7. Status & State Model (Simplified)
+| Status | Terminal? | Trust Event? | Retry Eligible | Alert Potential |
+|--------|-----------|--------------|---------------|-----------------|
+| MATCHED | Yes | PERFECT_MATCH | No | No |
+| DISCREPANCY_LOW | Yes | MINOR_DISCREPANCY | No | No |
+| DISCREPANCY_MEDIUM | Yes | MEDIUM_DISCREPANCY | No | No |
+| DISCREPANCY_HIGH | Yes | HIGH_DISCREPANCY | No | High Discrepancy Alert |
+| AFFILIATE_OVERCLAIMED | Yes | OVERCLAIM | No | Overclaim Alert |
+| INCOMPLETE_PLATFORM_DATA | No (1 extra attempt) | None | Yes | No |
+| MISSING_PLATFORM_DATA | No (until max/window) | None | Yes | Missing Data Alert |
+| UNVERIFIABLE | Yes | None | No | Data Quality Alert |
+| SKIPPED_SUSPENDED | Yes | None | No | System Health Alert |s domain model, moving parts, and the life of a submission from API ingest to reconciliation outcome, trust score shifts, and alert emission.
 
 ## 2. High-Level Goals
 | Goal | Why It Matters | Realization |
@@ -14,6 +25,38 @@ This document orients a new engineer in under 15 minutes to the platform's domai
 | Incremental enhancement path | Rapid iteration | Config-driven thresholds & modular services |
 
 ## 3. Component Map (Text Diagram)
+```
+[ Client / Affiliate ]
+        |
+        v (REST JSON + Bearer Auth)
++-----------------------+
+| FastAPI API Layer     |  <-- auth, validation, persistence of AffiliateReport
+| (lifespan management) |
++-----------+-----------+
+            | enqueue (reconciliation job)
+            v
+      +-------------+            +--------------------+
+      | Priority    |  pop job   | Reconciliation     |
+      | Delay Queue +----------->| Worker Thread      |
+      +------+------+            +---------+----------+
+             ^                              |
+             | (scheduled retry)            | run_reconciliation(report_id)
+             v                              v
+        +----+------------------------------+-----------------------------+
+        | Reconciliation Engine: fetch -> classify -> trust -> alert -> log|
+        +----+-----------------+-------------------+----------------------+ 
+             |                 |                   |
+             v                 v                   v
+       PlatformFetcher   Trust Scoring       Alerting Service
+             |                 |                   |
+             v (adapters)      |                   |
+     app.integrations.*        |                   |
+             |                 |                   |
+             +-----------------+-------------------+
+                               |
+                               v
+                     SQLAlchemy ORM / SQLite (tests) | PostgreSQL (prod)
+```
 ```
 [ Client / Affiliate ]
         |
@@ -106,6 +149,9 @@ This document orients a new engineer in under 15 minutes to the platform's domai
 - `ALERTING_SETTINGS`: repeat window for escalation.
 - `QUEUE_SETTINGS`: priority weights, capacity warnings.
 - `CIRCUIT_BREAKER`: failure threshold, cooldown, probe count.
+- `BACKOFF_POLICY`: exponential backoff parameters for failed operations.
+
+**Configuration Override**: All settings can be overridden via environment variables (e.g., `MOCK_FAILURE_RATE`, `REDDIT_LINK_RESOLVE_TIMEOUT`). In production deployments, these would typically be managed through a configuration service or environment-specific config files.
 
 ## 10. Extensibility Points
 | Area | Hook | Extension Path |
@@ -115,6 +161,15 @@ This document orients a new engineer in under 15 minutes to the platform's domai
 | Alert rule expansion | Add branch in `maybe_create_alert` | Keep log atomic commit |
 | Queue backend swap | Implement interface-compatible enqueue/dequeue | Worker unchanged |
 | Persistence store change | Replace engine in `database.py` | Models preserved |
+
+## 10.1 Recent Architecture Additions
+| Component | Purpose | Integration Point |
+|-----------|---------|-------------------|
+| Discord Bot Service | Automated moderation notifications | `app/services/discord_bot.py` |
+| Data Quality Validators | Input validation & data integrity checks | `app/services/data_quality_validators.py` |
+| Observability Framework | Metrics collection & monitoring | `app/utils/observability.py` |
+| Circuit Breaker (In-Memory) | Platform integration resilience | `app/utils/circuit_breaker.py` |
+| Backoff & Retry Logic | Exponential backoff for failed operations | `app/utils/backoff.py` |
 
 ## 11. Non-Goals (Explicit) 
 - Distributed queue (single-process MVP only).

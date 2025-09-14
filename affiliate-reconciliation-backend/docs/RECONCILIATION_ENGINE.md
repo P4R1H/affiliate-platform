@@ -1,6 +1,24 @@
 # Reconciliation Engine
+13. Invoke `maybe_create_alert` with retry_scheduled flag.
+14. Commit transaction with StaleDataError retry handling.
+15. Return structured summary dict for API/worker usage.
 
-Deep technical specification of `run_reconciliation` and its collaborating services.
+### Return Value Structure
+```python
+{
+    "affiliate_report_id": int,
+    "status": str,  # ReconciliationStatus enum value
+    "attempt_count": int,
+    "scheduled_retry_at": str | None,  # ISO format datetime
+    "trust_delta": float,  # 0.0 if no change
+    "new_trust_score": float,
+    "discrepancy_level": str | None,
+    "max_discrepancy_pct": float | None,
+    "rate_limited": bool,
+    "error_code": str | None,
+    "missing_fields": list[str],
+}
+```ep technical specification of `run_reconciliation` and its collaborating services.
 
 ## 1. Objectives
 | Objective | Implementation Strategy |
@@ -48,14 +66,15 @@ Affiliates may submit slightly ahead of the platform’s ingestion/aggregation; 
 ## 4. Retry Scheduling Policy
 | Status | Policy |
 |--------|--------|
-| MISSING_PLATFORM_DATA | Linear backoff: initial_delay_minutes * attempt_count (bounded by max attempts & window_hours) |
-| INCOMPLETE_PLATFORM_DATA | Allow one additional follow-up attempt (if attempt_count ≤ 1 + max_additional_attempts) with fixed 15 min delay |
+| MISSING_PLATFORM_DATA | Linear backoff: initial_delay_minutes * attempt_count (bounded by max_attempts & window_hours) |
+| INCOMPLETE_PLATFORM_DATA | Allow one additional follow-up attempt with fixed 15 min delay |
 | Others | No retry scheduled |
 
-### Future Improvements
-- Shift MISSING to exponential + jitter (`base * 2^(n-1) + random_jitter`).
-- Distinguish `auth_error` (terminal) vs transient network; skip retries for terminal.
-- Auto-enqueue next attempt (currently external scheduler responsibility).
+### Implementation Details
+- **Linear Backoff**: `delay_minutes = initial_delay_minutes * max(1, attempt_count)`
+- **Missing Data**: Max 5 attempts within 24-hour window, starting with 30-minute delay
+- **Incomplete Data**: Single additional attempt allowed if `attempt_count <= 1 + max_additional_attempts`
+- **Window Check**: No retry if `(now - submitted_at).total_seconds() / 3600.0 > window_hours`
 
 ## 5. Trust Scoring Integration
 | Event | Typical Scenario | Delta (config) | Side Effects |
@@ -70,9 +89,11 @@ Deltas clamp trust within [min_score, max_score]. Trust change recorded as `trus
 
 ## 6. Alerting Hooks
 `maybe_create_alert` invoked before commit so alert is atomic with reconciliation outcome.
-- Overclaim: FRAUD / severity HIGH or CRITICAL based on discrepancy_level
-- High Discrepancy: DATA_QUALITY; escalated to CRITICAL if prior high discrepancy alert in repeat window
-- Missing Terminal: SYSTEM_HEALTH (only when no more retries)
+- **Overclaim**: `HIGH_DISCREPANCY`, category=`FRAUD`, severity `HIGH` or `CRITICAL` if `discrepancy_level == CRITICAL`
+- **High Discrepancy**: `HIGH_DISCREPANCY`, category=`DATA_QUALITY`, severity `HIGH`; escalates to `CRITICAL` if repeat within window
+- **Missing Terminal**: `MISSING_DATA`, category=`SYSTEM_HEALTH`, severity `MEDIUM` (only when no retry scheduled)
+
+Idempotency: One alert per reconciliation log. Repeat detection checks for similar alerts within `repeat_overclaim_window_hours`.
 
 ## 7. Error & Failure Classification
 PlatformFetcher returns `FetchOutcome`:
@@ -101,16 +122,34 @@ Mitigations (Backlog):
 ## 9. Terminal vs Non-Terminal Determination
 Terminal statuses short-circuit further automatic reconciliation only when no `scheduled_retry_at` is set. `Post.is_reconciled` flips true to avoid repeated queueing. Partial & missing keep `is_reconciled` False.
 
-## 10. Partial Data Semantics
+Terminal statuses include:
+- `MATCHED`
+- `AFFILIATE_OVERCLAIMED`
+- `DISCREPANCY_HIGH`
+
+## 10. Error Handling & Session Management
+| Scenario | Handling |
+|----------|----------|
+| StaleDataError on commit | Retry once with session.merge(), log on second failure |
+| Missing AffiliateReport | Raise ValueError with report ID |
+| Platform fetch failures | Captured in FetchOutcome, logged in reconciliation log |
+| Trust scoring errors | Defensive handling with default trust score (0.5) |
+
+Session lifecycle:
+- Fresh SQLAlchemy session per reconciliation job
+- Proper cleanup in finally block (worker responsibility)
+- Atomic alert creation before commit
+
+## 11. Partial Data Semantics
 - `confidence_ratio = observed_metric_count / 3`.
 - Discrepancy percentages only computed for present metrics; others excluded from max_diff.
 - Trust neutrality: no trust event triggered on partial to avoid penalizing platform unavailability.
 
-## 11. Circuit Breaker Interaction
+## 12. Circuit Breaker Interaction
 - On breaker OPEN, call is denied early → classification path → missing.
 - Failures (including rate-limited) count toward breaker threshold (future refinement: treat rate limit separately).
 
-## 12. Logging & Observability Points
+## 13. Logging & Observability Points
 | Log Location | Purpose |
 |--------------|---------|
 | Worker start/finish | Operational heartbeat |
@@ -120,16 +159,16 @@ Terminal statuses short-circuit further automatic reconciliation only when no `s
 
 Future: metric counters for attempt latency, status distribution, trust event frequency.
 
-## 13. Configuration Cheat Sheet
+## 14. Configuration Cheat Sheet
 | Setting Namespace | Key Examples |
 |-------------------|--------------|
 | RECONCILIATION_SETTINGS | base_tolerance_pct, discrepancy_tiers, overclaim thresholds |
-| RETRY_POLICY | missing_platform_data.max_attempts, incomplete_platform_data.max_additional_attempts |
-| TRUST_SCORING | events.{PERFECT_MATCH,...}, threshold buckets |
-| ALERTING_SETTINGS | repeat_overclaim_window_hours |
+| RETRY_POLICY | missing_platform_data.{initial_delay_minutes=30, max_attempts=5, window_hours=24}, incomplete_platform_data.{max_additional_attempts=1} |
+| TRUST_SCORING | events.{PERFECT_MATCH, MINOR_DISCREPANCY, ...}, min_score, max_score |
+| ALERTING_SETTINGS | repeat_overclaim_window_hours=6 |
 | CIRCUIT_BREAKER | failure_threshold, open_cooldown_seconds, half_open_probe_count |
 
-## 14. Edge Case Handling
+## 15. Edge Case Handling
 | Edge Case | Behavior |
 |-----------|----------|
 | All claimed metrics zero, platform None | Missing classification, schedule retry |
@@ -137,7 +176,7 @@ Future: metric counters for attempt latency, status distribution, trust event fr
 | Rate limit mid-attempt | Treated as failure; attempts continue until max_attempts |
 | Auth error | Terminal inside fetch loop (no further in-attempt retries) |
 
-## 15. Example Reconciliation Trace (Annotated)
+## 16. Example Reconciliation Trace (Annotated)
 ```
 Attempt 1:
   FetchOutcome: success=True metrics={views:100, clicks:10, conversions:1}
@@ -157,7 +196,7 @@ Attempt 1 (Missing):
   Commit
 ```
 
-## 16. Future Enhancements Backlog (Engine Scope)
+## 17. Future Enhancements Backlog (Engine Scope)
 | Feature | Benefit |
 |---------|---------|
 | Attempt entity & idempotency token | Hard guards against double trust deltas |
