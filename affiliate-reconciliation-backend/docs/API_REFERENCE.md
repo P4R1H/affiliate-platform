@@ -24,54 +24,6 @@ The platform implements role-based access control with the following user roles:
 
 Some endpoints require specific roles and will return `403 Forbidden` if accessed by users without sufficient permissions.
 
-Complete reference for all REST API endpoints in the Affiliate Reconciliation Platform.
-
-## Base URL
-```
-http://localhost:8000/api/v1
-```
-
-## Authentication
-All API endpoints require authentication via Bearer token:
-```
-Authorization: Bearer {api_key}
-```
-
-API keys are generated when creating a user account and can be retrieved via the `/users/me` endpoint.
-
-### Role-Based Access Control (RBAC)
-The platform implements role-based access control with the following user roles:
-
-- **AFFILIATE**: Can submit posts, view their own submissions, and access basic platform information
-- **CLIENT**: Can access reconciliation data, trigger reconciliations, and manage campaigns
-- **ADMIN**: Full system access including user management and system administration
-
-Some endpoints require specific roles and will return `403 Forbidden` if accessed by users without sufficient permissions.
-
-## Response Format
-All API responses follow a consistent structure:
-
-```json
-{
-  "success": true,
-  "message": "Operation completed successfully",
-  "data": {
-    // Response-specific data here
-  },
-  "timestamp": "2024-01-15T10:30:00Z"
-}
-```
-
-Error responses:
-```json
-{
-  "success": false,
-  "message": "Error description",
-  "error_code": "VALIDATION_ERROR",
-  "timestamp": "2024-01-15T10:30:00Z"
-}
-```
-
 ## Users
 
 ### Create User
