@@ -200,4 +200,3 @@ This document orients a new engineer in under 15 minutes to the## 7. Status & St
 5. Inspect logs for reconciliation job lifecycle.
 
 ---
-**Next Docs:** `DATA_MODEL.md` (entity deep dive) & `RECONCILIATION_ENGINE.md` (inner loop details).
